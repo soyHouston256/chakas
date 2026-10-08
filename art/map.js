@@ -228,7 +228,7 @@
   /* Capas estáticas                                                     */
   /* ------------------------------------------------------------------ */
   var PERU = 1, LAKE = 9;
-  var L = null; // { base, waves[], overlay, icons{}, iconsGrey{} }
+  var L = null; // { base, waves[], overlay, icons{}, grey{}, cards{}, labels{}, routes[], frame }
   function canvas(w, h) {
     if (typeof document === 'undefined' || !document.createElement) return null;
     var c = document.createElement('canvas');
@@ -243,34 +243,35 @@
     var e = 1 - Math.abs(d) / hw + (n - 0.5) * 0.55;
     // Altiplano (sur-este): meseta alta y amarillenta alrededor del Titicaca
     var alti = lat < -14.2 && d > -0.6 && d < 1.6;
-    var dith = bayer(x, y);
     if (e > 0) {
-      // relieve: sombreado con luz del noroeste
-      var n2 = fbm((x - 1) * 0.09, (y - 1) * 0.09);
-      var e2 = 1 - Math.abs(lon - 0.11 - axisAt(lat + 0.11)) / hw + (n2 - 0.5) * 0.55;
-      var shade = (e - e2) * 6;
-      var col;
-      // cumbres: banda estrecha y absoluta junto al eje (no escala con el ancho de la sierra)
-      var core = 1 - Math.abs(d) / 0.8 + (n - 0.5) * 0.9;
-      if (core > 0.7) col = (n + hash(x, y) * 0.25 > 0.62) ? C.snow : C.snowS;
-      else if (core > 0.28) col = mix(C.rock, C.high, n);
-      else if (alti) col = mix(C.puna, C.hill, Math.max(0, (n - 0.3) * 0.8));
-      else if (e < 0.18) col = mix(d < 0 ? C.sand2 : C.ceja, C.hill, e / 0.18 > dith ? 1 : 0.3);
-      else if (e < 0.5 || hash(x >> 1, y >> 1) > 0.35) col = C.hill;
-      else col = mix(C.hill, C.rock, 0.6);
-      if (shade > 0.08 + dith * 0.15) col = mix(col, [255, 240, 210], 0.28);
-      else if (shade < -0.08 - dith * 0.15) col = mix(col, C.rock2, core > 0.7 ? 0.25 : 0.45);
+      // Macizos separados, luz del noroeste y barrancos oblicuos al eje.
+      var ridge = Math.sin(y * 0.43 + d * 3.4 + vnoise(x * 0.18, y * 0.18) * 5);
+      var valley = Math.abs(Math.sin(y * 0.24 + d * 4.7));
+      var core = Math.max(0, 1 - Math.abs(d) / 0.85);
+      var col = alti ? mix(C.puna, C.hill, n * 0.5) :
+        e < 0.22 ? mix(d < 0 ? C.sand2 : C.ceja, C.hill, 0.65) :
+        mix(C.hill, C.high, core * 0.55);
+      if (ridge > 0.35) col = mix(col, C.sand3, 0.27);
+      if (ridge < -0.15 || valley < 0.2) col = mix(col, C.rock2, 0.48);
+      if (d > 0.15 && ridge < 0.35) col = mix(col, C.rock2, 0.28);
+      if (valley > 0.93 && ridge > 0) col = mix(col, C.sand3, 0.2);
       return col;
     }
     if (d < 0) {
       // desierto costero: ocre con dunas
-      var dn = vnoise(x * 0.35 + y * 0.12, y * 0.6);
-      return dn > 0.72 - dith * 0.1 ? C.sand3 : dn < 0.25 + dith * 0.1 ? C.sand2 : C.sand;
+      var dune = Math.sin(y * 0.8 + x * 0.3 + vnoise(x * 0.12, y * 0.12) * 5);
+      return dune > 0.8 ? C.sand3 : dune < -0.82 ? C.sand2 : C.sand;
     }
-    // selva amazónica
-    var jn = fbm(x * 0.22, y * 0.22) + hash(x, y) * 0.18;
-    if (e > -0.35) return jn > 0.6 ? C.jungle3 : C.ceja;
-    return jn > 0.72 ? C.jungle3 : jn < 0.4 ? C.jungle2 : C.jungle;
+    // Copas redondeadas y escalonadas con claros irregulares.
+    var ty = Math.floor(y / 5), tx = Math.floor((x + (ty & 1) * 2) / 5);
+    var seed = hash(tx, ty), ox = (x + (ty & 1) * 2) % 5 - 2;
+    var oy = y % 5 - 2, crown = Math.abs(ox) + Math.abs(oy);
+    var jn = vnoise(x * 0.12, y * 0.12);
+    ox -= seed > 0.6 ? 1 : 0;
+    if (seed < 0.15 || crown > 3 || (oy > 1 && ox > 0)) return C.jungle2;
+    if (oy < 0 && ox <= 0 && seed > 0.35) return jn > 0.5 ? C.jungle3 : C.ceja;
+    return oy > 0 && ox > 0 ? C.jungle2 : jn > 0.62 ? C.ceja : C.jungle;
+
   }
 
   function buildBase() {
@@ -317,18 +318,49 @@
         var dd = near[k], dt = bayer(x, y);
         col = dd < 3 + dt * 2 ? C.shelf : dd < 9 + dt * 4 ? C.sea : C.deep;
       } else if (id === LAKE) {
-        col = bayer(x, y) > 0.8 ? C.lake2 : C.lake;
+        var shore = x > 0 && x < LW - 1 && y > 0 && y < LH - 1 &&
+          (ids[k - 1] !== LAKE || ids[k + 1] !== LAKE || ids[k - LW] !== LAKE || ids[k + LW] !== LAKE);
+        col = shore ? C.shelf : (y % 4 === 0 && (x + y * 2) % 7 < 3) ? [136, 193, 205] : C.lake;
       } else {
         col = terrain(lat, lon, x, y, ids, k);
         if (id !== PERU) col = mix(col, C.fade, 0.55);
       }
       buf[k * 4] = col[0]; buf[k * 4 + 1] = col[1]; buf[k * 4 + 2] = col[2]; buf[k * 4 + 3] = 255;
     }
+    // Cumbres cónicas escalonadas; su sombra se proyecta al este.
+    var peaks = [[-5.4, -79.1, 4], [-7.3, -78.0, 5], [-9.1, -77.5, 8],
+      [-9.8, -77.1, 6], [-11.5, -75.7, 6], [-13.0, -74.1, 5],
+      [-13.7, -72.6, 7], [-14.7, -71.2, 6], [-16.0, -70.5, 7], [-17.1, -69.9, 5]];
+    function paint(x, y, color) {
+      if (x < 0 || y < 0 || x >= LW || y >= LH) return;
+      var k = y * LW + x;
+      if (!ids[k] || ids[k] === LAKE) return;
+      if (ids[k] !== PERU) color = mix(color, C.fade, 0.55);
+      buf[k * 4] = color[0]; buf[k * 4 + 1] = color[1]; buf[k * 4 + 2] = color[2];
+    }
+    for (i = 0; i < peaks.length; i++) {
+      var peak = peaks[i], cx = Math.round(px(peak[1]) / S), cy = Math.round(py(peak[0]) / S), ph = peak[2];
+      for (var yy = 0; yy <= ph; yy++) {
+        for (var xx = 0; xx <= Math.floor(yy * 0.7); xx++) paint(cx + xx + 2, cy + yy + 2, C.rock2);
+      }
+      for (yy = ph; yy >= 0; yy--) {
+        var span = Math.floor(yy * 0.7);
+        for (xx = -span; xx <= span; xx++) {
+          var snowy = yy < ph * 0.42 || (yy < ph * 0.65 && (xx === -1 || xx === 1));
+          paint(cx + xx, cy + yy, snowy ? (xx <= 0 ? C.snow : C.snowS) :
+            xx < 0 ? C.high : xx === 0 ? C.rock : C.rock2);
+        }
+      }
+    }
     // ríos (antes de los bordes)
     var rivers = D.rivers || [];
     for (i = 0; i < rivers.length; i++) {
       var r = polyLL(rivers[i].pts);
-      for (j = 0; j + 1 < r.length; j++) linePix(buf, ids, r[j], r[j + 1], C.river, true);
+      for (j = 0; j + 1 < r.length; j++) {
+        var large = rivers[i].pts[j][0] > -10;
+        if (large) linePix(buf, ids, [r[j][0] + 1, r[j][1]], [r[j + 1][0] + 1, r[j + 1][1]], C.shelf, true);
+        linePix(buf, ids, r[j], r[j + 1], large ? [112, 180, 198] : C.river, true);
+      }
     }
     // bordes: costa (oscura), frontera de Perú (marrón), fronteras vecinas (punteadas tenues)
     for (y = 0; y < LH; y++) for (x = 0; x < LW; x++) {
@@ -357,8 +389,10 @@
         if (ids[k] !== 0) continue;
         var col = null, a = 255;
         if (near[k] <= 1.5) {
-          if (hash(x, y + f * 31) > 0.45) col = C.foam;
-        } else if (y % 5 === (x >> 4) % 5) {
+          if ((x + y + f) % 5 !== 0) col = C.foam;
+        } else if (near[k] < 6 && Math.abs(near[k] - (2.8 + f * 0.6)) < 0.65 && (x + y) % 7 < 5) {
+          col = C.wave; a = 180;
+        } else if (y % 7 === (x >> 4) % 7) {
           var cell = Math.floor((x + f * 2) / 7), h = hash(cell, y);
           var off = (x + f * 2) % 7;
           if (h > 0.62 && off < 3) col = near[k] < 10 ? C.foam : C.wave, a = near[k] < 10 ? 150 : 255;
@@ -381,7 +415,14 @@
     for (var y = 0; y < rows.length; y++) for (var x = 0; x < rows[y].length; x++) {
       var ch = rows[y][x];
       if (ch === '.' || !PAL[ch]) continue;
-      g.fillStyle = PAL[ch];
+      var base = PAL[ch];
+      if ('sHhwgR'.indexOf(ch) >= 0) {
+        var light = x < rows[y].length / 2 && (x + y * 3) % 5 === 0;
+        var dark = x > rows[y].length * 0.65 && (x + y) % 3 === 0;
+        var color = mix(rgb(base), light ? [255, 237, 184] : [46, 31, 27], light ? 0.3 : dark ? 0.22 : 0);
+        base = 'rgb(' + color.map(Math.round).join(',') + ')';
+      }
+      g.fillStyle = base;
       g.fillRect(x, y, 1, 1);
     }
     return c;
@@ -512,6 +553,18 @@
     g.fillText(txt, x, y);
   }
 
+  function regionLabel(g, text, x, y, fill, stroke) {
+    var spacing = 1.3, width = -spacing;
+    for (var i = 0; i < text.length; i++) width += g.measureText(text[i]).width + spacing;
+    g.save(); g.textAlign = 'left';
+    x -= width / 2;
+    for (i = 0; i < text.length; i++) {
+      outlineText(g, text[i], x, y + 1, fill, stroke, 3);
+      x += g.measureText(text[i]).width + spacing;
+    }
+    g.restore();
+  }
+
   function buildOverlay() {
     var c = canvas(W, H), g = c.getContext('2d');
     g.textBaseline = 'middle';
@@ -523,10 +576,10 @@
     outlineText(g, '(océano Pacífico)', 150, 268, '#9fc6da', '#0f2f4a', 3);
     g.font = 'bold 12px Georgia, serif';
     g.globalAlpha = 0.9;
-    outlineText(g, 'CHINCHAYSUYU', 322, 128, '#f3e3b8', '#3a2414', 3);
-    outlineText(g, 'ANTISUYU', 520, 228, '#d8f0c8', '#173a1c', 3);
-    outlineText(g, 'CUNTISUYU', 410, 468, '#f3e3b8', '#3a2414', 3);
-    outlineText(g, 'COLLASUYU', 590, 512, '#f3e3b8', '#3a2414', 3);
+    regionLabel(g, 'CHINCHAYSUYU', 322, 128, '#f3e3b8', '#3a2414');
+    regionLabel(g, 'ANTISUYU', 520, 228, '#d8f0c8', '#173a1c');
+    regionLabel(g, 'CUNTISUYU', 410, 468, '#f3e3b8', '#3a2414');
+    regionLabel(g, 'COLLASUYU', 590, 512, '#f3e3b8', '#3a2414');
     g.globalAlpha = 1;
     g.font = 'italic 10px Georgia, serif';
     var tt = project(-15.75, -69.4);
@@ -540,6 +593,19 @@
       outlineText(g, rl[i][0], 0, 0, '#bfe6ff', '#0f2f4a', 3);
       g.restore();
     }
+    // líneas guía al punto geográfico real
+    var i, s, p;
+    for (i = 0; i < stages.length; i++) {
+      s = stages[i]; p = project(s.lat, s.lon);
+      g.strokeStyle = 'rgba(27,18,16,0.85)';
+      g.lineWidth = 1;
+      g.setLineDash([2, 3]);
+      g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(s.node[0], s.node[1]); g.stroke();
+      g.setLineDash([]);
+      g.fillStyle = '#1b1210'; g.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, 5, 5);
+      g.fillStyle = '#d8623f'; g.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 3, 3);
+    }
+
     // título en la cartela
     g.textAlign = 'center';
     g.font = 'bold 15px Georgia, serif';
@@ -552,7 +618,24 @@
     // leyenda inferior
     g.textAlign = 'left';
     g.font = '11px Georgia, serif';
-    outlineText(g, 'Qhapaq Ñan · ruta del juego', 18, 524, '#e8d7a8', '#10283c', 3);
+    outlineText(g, 'Qhapaq Ñan · ruta del juego', 30, 518, '#e8d7a8', '#10283c', 3);
+    return c;
+  }
+
+  function buildFrame() {
+    var c = canvas(LW, LH), g = c.getContext('2d');
+    for (var i = 0; i < 7; i++) {
+      g.fillStyle = 'rgba(12,20,22,' + (0.24 - i * 0.028) + ')';
+      g.fillRect(i, i, LW - i * 2, 1); g.fillRect(i, LH - i - 1, LW - i * 2, 1);
+      g.fillRect(i, i, 1, LH - i * 2); g.fillRect(LW - i - 1, i, 1, LH - i * 2);
+    }
+    g.strokeStyle = '#9e8353'; g.lineWidth = 1; g.strokeRect(1.5, 1.5, LW - 3, LH - 3);
+    g.strokeStyle = '#302b25'; g.strokeRect(2.5, 2.5, LW - 5, LH - 5);
+    g.fillStyle = '#e3c681';
+    for (var q = 0; q < 4; q++) {
+      var x = q & 1 ? LW - 9 : 3, y = q & 2 ? LH - 9 : 3;
+      g.fillRect(x, y, 6, 1); g.fillRect(x, y, 1, 6); g.fillRect(x + 2, y + 2, 2, 2);
+    }
     return c;
   }
 
@@ -568,7 +651,34 @@
     drawCompass(g, 28, 150);
     var icons = {}, grey = {};
     for (var k in ICON_ROWS) { icons[k] = grid(ICON_ROWS[k]); grey[k] = greyOf(icons[k]); }
-    L = { base: B.canvas, waves: buildWaves(B.ids, B.near), overlay: buildOverlay(), icons: icons, grey: grey, card: null, cardKey: '' };
+    L = { base: B.canvas, waves: buildWaves(B.ids, B.near), overlay: buildOverlay(), icons: icons, grey: grey, frame: buildFrame(), cards: {}, labels: {}, routes: [], card: null, cardKey: '' };
+    var states = ['completed', 'current', 'locked'];
+    for (var i = 0; i < stages.length; i++) for (var j = 0; j < states.length; j++) {
+      L.card = null; buildCard(i, states[j]); L.cards[i + '|' + states[j]] = L.card;
+      for (var selected = 0; selected < 2; selected++) {
+        var label = canvas(210, 30), lg = label.getContext('2d');
+        lg.textAlign = 'center'; lg.textBaseline = 'alphabetic';
+        lg.font = (selected ? 'bold 13px' : 'bold 11px') + ' Georgia, serif';
+        lg.fillStyle = 'rgba(15,19,18,0.4)';
+        var tw = Math.ceil(lg.measureText(stages[i].name).width);
+        lg.fillRect(Math.floor((210 - tw) / 2) - 5, 7, tw + 10, 17);
+        outlineText(lg, stages[i].name, 105, 20, selected ? '#f2c14e' : states[j] === 'locked' ? '#c7bcae' : '#f6e9cc', '#1b1210', 3);
+        L.labels[i + '|' + states[j] + '|' + selected] = label;
+      }
+    }
+    for (i = 0; i <= stages.length; i++) {
+      var rc = canvas(W, H), rg = rc.getContext('2d');
+      var done = route.nodeDist[Math.min(i, route.nodeDist.length - 1)];
+      if (i < stages.length - 1) dotsAlong(rg, done, route.nodeDist[i + 1], 'rgba(255,198,76,0.08)', 12, 9, 0);
+      dotsAlong(rg, 0, done, 'rgba(255,198,76,0.13)', 12, 9, 0);
+      dotsAlong(rg, 0, route.total, '#1b1210', 9, 9, 0);
+      dotsAlong(rg, done, route.total, '#b29a6c', 6, 9, 0);
+      dotsAlong(rg, done, route.total, '#7c6a52', 3, 9, 0);
+      dotsAlong(rg, 0, done, '#ffd25a', 6, 9, 0);
+      dotsAlong(rg, 0, done, '#fff0ac', 3, 9, 0);
+      L.routes.push(rc);
+    }
+    L.card = null;
     return true;
   }
 
@@ -598,14 +708,21 @@
       var cx = q & 1 ? w - 15 : 9, cy = q & 2 ? h - 15 : 9;
       g.fillRect(cx, cy, 6, 6);
     }
+    g.fillStyle = '#655035'; g.fillRect(12, 98, w - 24, 3);
+    g.fillStyle = '#ddbb6b'; g.fillRect(12, 98, w - 24, 1);
+    g.fillStyle = '#382820';
+    for (var stripe = 105; stripe < h - 98; stripe += 6) g.fillRect(12, stripe, w - 24, 1);
     g.textBaseline = 'alphabetic';
     g.textAlign = 'left';
     g.font = 'bold 12px Georgia, serif';
     g.fillStyle = '#c99a3c';
     g.fillText('ETAPA ' + (i + 1) + ' DE ' + stages.length + '  ·  ' + s.year, 22, 30);
-    g.font = 'bold 24px Georgia, serif';
+    // nombre en una sola línea (reduce el cuerpo si hace falta) para no pisar el separador
+    var fs = 24;
+    do { g.font = 'bold ' + fs + 'px Georgia, serif'; } while (g.measureText(s.name).width > w - 120 && (fs -= 2) > 16);
     var nl = wrap(g, s.name, w - 120), y = 58;
-    for (var k = 0; k < nl.length; k++) { outlineText(g, nl[k], 22, y, '#f2c14e', '#000', 4); y += 26; }
+    for (var k = 0; k < nl.length; k++) { outlineText(g, nl[k], 22, y, '#f2c14e', '#000', 4); y += fs + 2; }
+    y = Math.max(y, 84);
     g.font = 'italic 14px Georgia, serif';
     g.fillStyle = '#e8d7a8';
     g.fillText(s.place, 22, y - 4);
@@ -661,7 +778,7 @@
     var start = Math.ceil((d0 - phase) / step) * step + phase;
     for (var d = start; d <= d1; d += step) {
       var p = routeAt(d);
-      ctx.fillRect(snap(p[0]) - (size >> 1), snap(p[1]) - (size >> 1), size, size);
+      ctx.fillRect(snap(p[0]) - Math.floor(size / (2 * S)) * S, snap(p[1]) - Math.floor(size / (2 * S)) * S, size, size);
     }
   }
 
@@ -684,24 +801,11 @@
     ctx.drawImage(L.waves[Math.floor(t * 3) & 3], 0, 0, W, H);
     ctx.drawImage(L.overlay, 0, 0);
 
-    // líneas guía al punto geográfico real
-    var i, s, p;
-    for (i = 0; i < stages.length; i++) {
-      s = stages[i]; p = project(s.lat, s.lon);
-      ctx.strokeStyle = 'rgba(27,18,16,0.85)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([2, 3]);
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(s.node[0], s.node[1]); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#1b1210'; ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, 5, 5);
-      ctx.fillStyle = '#d8623f'; ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 3, 3);
-    }
+    var i, s;
 
     // ruta punteada: tramo recorrido brillante, futuro tenue, tramo en curso con brillo móvil
     var nd = route.nodeDist, done = nd[Math.min(progress, nd.length - 1)];
-    dotsAlong(ctx, 0, route.total, '#1b1210', 7, 9, 0);
-    dotsAlong(ctx, done, route.total, '#7c6a52', 3, 9, 0);
-    dotsAlong(ctx, 0, done, '#ffd25a', 5, 9, 0);
+    ctx.drawImage(L.routes[progress], 0, 0);
     if (progress < stages.length - 1) {
       var segEnd = nd[progress + 1], ph = (t * 18) % 9;
       ctx.globalAlpha = 0.8;
@@ -731,11 +835,7 @@
       if (s.icon === 'ships' && st !== 'locked') smoke(ctx, ix, iy, t);
       if (st === 'completed') flag(ctx, ix + iw - 6, iy - 6, t);
       if (st === 'locked') lock(ctx, ix + iw - 9, iy + 3);
-      // nombre
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'alphabetic';
-      ctx.font = (i === sel ? 'bold 13px' : 'bold 11px') + ' Georgia, serif';
-      outlineText(ctx, s.name, s.node[0], s.node[1] + 20, i === sel ? '#f2c14e' : st === 'locked' ? '#c7bcae' : '#f6e9cc', '#1b1210', 4);
+      ctx.drawImage(L.labels[i + '|' + st + '|' + (i === sel ? 1 : 0)], s.node[0] - 105, s.node[1]);
     }
 
     // flecha de selección (rebota)
@@ -750,8 +850,9 @@
 
     // ficha
     var key = sel + '|' + statusOf(sel, progress);
-    if (L.cardKey !== key || !L.card) { buildCard(sel, statusOf(sel, progress)); L.cardKey = key; }
+    if (L.cardKey !== key || !L.card) { L.card = L.cards[key]; L.cardKey = key; }
     ctx.drawImage(L.card, CARD.x, CARD.y);
+    ctx.drawImage(L.frame, 0, 0, W, H);
     ctx.restore();
     return true;
   }
