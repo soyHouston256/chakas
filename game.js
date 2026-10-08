@@ -13,7 +13,18 @@ let state = "menu",
   cam = 0,
   score = 0,
   sound = false,
-  audio;
+  audio,
+  fx = [],
+  renderT = 0,
+  llamaS = { anim: "idle", animT: 0, face: 1, prev: 20 };
+// Arte opcional (art/sprites.js y art/background.js). Si falta, se usan los rectángulos.
+const SP = window.ChankasSprites || null,
+  BG = window.ChankasBackground || null;
+const ENEMY_KIND = ["perro", "arcabucero", "piquero", "capitan"];
+const SPR = { facing: 1, fill: 1, flash: false, alpha: 1, rotation: 0, active: false, w: 0, h: 0 };
+const BG_OPTS = { width: 960, height: 540, levelLength: 4200 };
+const DOG_W = 44,
+  DOG_H = 26;
 const W = 960,
   H = 540,
   GROUND = 440,
@@ -54,26 +65,34 @@ function reset() {
     cool: 0,
     inv: 0,
     ground: true,
+    anim: "idle",
+    animT: 0,
+    throwT: 0,
+    flash: 0,
   };
   shots = [];
   particles = [];
   score = 0;
   cam = 0;
   world = { time: 0, llama: 20, spit: 0, checkpoint: 70 };
+  fx = [];
+  llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9 };
   enemies = [];
-  [620, 980, 1360, 1750, 2150, 2600, 2940, 3300].forEach((x, i) =>
+  [620, 980, 1360, 1750, 2150, 2600, 2940, 3300].forEach((x, i) => {
+    const dog = i % 3 === 0; // type 0 = perro (alano): hitbox bajo y ancho
     enemies.push({
       x,
-      y: GROUND - 48,
-      w: 30,
-      h: 48,
+      y: GROUND - (dog ? DOG_H : 48),
+      w: dog ? DOG_W : 30,
+      h: dog ? DOG_H : 48,
       hp: 3,
       type: i % 3,
       cool: 1 + (i % 2),
       home: x,
       dead: false,
-    }),
-  );
+      ...animFields(),
+    });
+  });
   enemies.push({
     x: 3910,
     y: GROUND - 96,
@@ -85,9 +104,51 @@ function reset() {
     cool: 1.5,
     home: 3910,
     dead: false,
+    ...animFields(),
   });
   state = "playing";
   overlay.style.display = "none";
+}
+function animFields() {
+  return { anim: "", animT: 0, face: -1, flash: 0, fvx: 0, fvy: 0, rot: 0, spin: 0, gone: false };
+}
+// Cambia de animación solo si es distinta (reinicia el temporizador de la acción).
+function setAnim(o, a) {
+  if (o.anim !== a) {
+    o.anim = a;
+    o.animT = 0;
+  }
+}
+function restartAnim(o, a) {
+  o.anim = a;
+  o.animT = 0;
+}
+function animDur(kind, anim, fallback) {
+  return SP && SP.duration ? SP.duration(kind, anim) || fallback : fallback;
+}
+// Efectos de arte (hit_spark, dust, muzzle_flash): x,y = centro del efecto.
+function spawnFx(kind, anim, x, y, face = 1) {
+  if (!SP) return;
+  fx.push({ kind, anim, x, y, t: 0, face, dur: animDur(kind, anim, 0.3) });
+}
+function updateFx(dt) {
+  let n = 0;
+  for (const f of fx) {
+    f.t += dt;
+    if (f.t < f.dur) fx[n++] = f;
+  }
+  fx.length = n;
+  for (const e of enemies) {
+    if (!e.dead || e.gone) continue;
+    e.animT += dt;
+    e.flash -= dt;
+    if (e.type === 3) continue; // el capitán cae de rodillas en su sitio
+    e.x += e.fvx * dt;
+    e.y += e.fvy * dt;
+    e.fvy += 900 * dt;
+    e.rot += e.spin * dt;
+    if (e.y > H + 100 || e.x + e.w < cam - 150 || e.x > cam + W + 150) e.gone = true;
+  }
 }
 function show(title, message, label) {
   document.querySelector("#title").textContent = title;
@@ -149,6 +210,8 @@ function hit() {
   if (player.inv > 0) return;
   player.hp--;
   player.inv = 1.5;
+  player.flash = 0.12;
+  restartAnim(player, player.hp <= 0 ? "dead" : "hurt");
   burst(player.x, player.y, "#e9b25f");
   tone(130);
   if (player.hp <= 0) {
@@ -165,6 +228,8 @@ function shoot(fire) {
   player.ammo--;
   if (fire) player.fire--;
   player.cool = fire ? 0.65 : 0.24;
+  restartAnim(player, "throw");
+  player.throwT = animDur("hero", "throw", 0.3);
   shots.push({
     x: player.x + 14,
     y: player.y + 23,
@@ -184,6 +249,10 @@ function update(dt) {
   world.time += dt;
   player.cool -= dt;
   player.inv -= dt;
+  player.animT += dt;
+  player.throwT -= dt;
+  player.flash -= dt;
+  const wasGround = player.ground;
   let direction =
     (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
     (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
@@ -192,6 +261,7 @@ function update(dt) {
   if ((keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW")) && player.ground) {
     player.vy = -510;
     player.ground = false;
+    spawnFx("dust", "puff", player.x + player.w / 2, player.y + player.h - 6);
     tone(300);
   }
   const old = player.y + player.h;
@@ -212,6 +282,7 @@ function update(dt) {
     player.y = floor - player.h;
     player.vy = 0;
     player.ground = true;
+    if (!wasGround) spawnFx("dust", "puff", player.x + player.w / 2, player.y + player.h - 6);
   }
   if (keys.has("KeyJ")) shoot(false);
   if (keys.has("KeyK")) shoot(true);
@@ -224,13 +295,21 @@ function update(dt) {
   for (const e of enemies) {
     if (e.dead || Math.abs(e.x - player.x) > 850) continue;
     const dir = player.x > e.x ? 1 : -1;
+    const prevX = e.x;
     e.cool -= dt;
+    e.animT += dt;
+    e.flash -= dt;
     if (e.type === 0) e.x += dir * 65 * dt;
     else if (e.type === 2) e.x = e.home + Math.sin(world.time * 1.8) * 85;
     else if (e.type === 3) e.x += dir * 45 * dt;
+    enemyAnim(e, dir, prevX);
     if (overlap(player, e)) hit();
     if (e.cool <= 0 && Math.abs(e.x - player.x) < 650) {
       e.cool = e.type === 3 ? 0.85 : e.type === 1 ? 1.8 : 2.5;
+      e.face = dir;
+      restartAnim(e, ENEMY_ATTACK[e.type]);
+      if (e.type === 1 || e.type === 3)
+        spawnFx("muzzle_flash", "burst", dir > 0 ? e.x + e.w + 6 : e.x - 6, e.y + (e.type === 3 ? 40 : 20), dir);
       shots.push({
         x: e.x,
         y: e.y + 22,
@@ -254,6 +333,9 @@ function update(dt) {
         spit: true,
       });
       world.spit = 2.8;
+      restartAnim(llamaS, "spit");
+      llamaS.spitT = 0;
+      llamaS.face = dir * -1;
     }
   }
   for (const s of shots) {
@@ -266,9 +348,12 @@ function update(dt) {
         if (!e.dead && overlap(s, e)) {
           e.hp -= s.damage;
           s.life = 0;
+          e.flash = 0.1;
+          spawnFx("hit_spark", "burst", s.x + 4, s.y + 4);
           burst(s.x, s.y, s.fire ? "#f09e47" : "#eddb9c", 5);
           if (e.hp <= 0) {
             e.dead = true;
+            defeat(e, s.vx);
             score += e.type === 3 ? 1000 : 100;
             burst(e.x, e.y, "#d6c5a3", 22);
             tone(700);
@@ -298,7 +383,55 @@ function update(dt) {
     p.t -= dt;
   }
   particles = particles.filter((p) => p.t > 0);
+  updateLlama(dt);
+  heroAnim(direction);
+  updateFx(dt);
   cam = Math.max(0, Math.min(END - W, player.x - 280));
+}
+const ENEMY_ATTACK = ["lunge", "fire", "thrust", "shoot"];
+function enemyAnim(e, dir, prevX) {
+  const busy = e.animT < animDur(ENEMY_KIND[e.type], e.anim, 0.4);
+  if (e.type === 2) {
+    // patrulla: mira hacia donde camina salvo mientras ataca
+    if (!(e.anim === "thrust" && busy) && e.x !== prevX) e.face = e.x > prevX ? 1 : -1;
+  } else e.face = dir;
+  if (e.anim === ENEMY_ATTACK[e.type] && busy) return;
+  if (e.type === 0) setAnim(e, "run");
+  else if (e.type === 1) setAnim(e, e.cool > 0.6 ? "reload" : "aim");
+  else if (e.type === 2) setAnim(e, "walk");
+  else if (Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < 90) {
+    if (e.anim !== "slash" || !busy) restartAnim(e, "slash");
+  }
+  else setAnim(e, "walk");
+}
+// Enemigo derrotado: sale volando girando (sin sangre); el capitán se arrodilla.
+function defeat(e, vx) {
+  const side = vx >= 0 ? 1 : -1;
+  e.animT = 0;
+  e.anim = e.type === 3 ? "defeated" : "hit";
+  e.flash = 0.12;
+  e.fvx = side * (380 + Math.random() * 100);
+  e.fvy = -520 - Math.random() * 80;
+  e.spin = side * (9 + Math.random() * 4);
+  spawnFx("dust", "puff", e.x + e.w / 2, e.y + e.h - 6);
+}
+function heroAnim(direction) {
+  let a;
+  if (player.hp <= 0) a = "dead";
+  else if (player.inv > 1.2) a = "hurt";
+  else if (player.throwT > 0) a = "throw";
+  else if (!player.ground) a = player.vy < 0 ? "jump" : "fall";
+  else a = direction ? "run" : "idle";
+  setAnim(player, a);
+}
+function updateLlama(dt) {
+  const v = dt > 0 ? (world.llama - llamaS.prev) / dt : 0;
+  llamaS.prev = world.llama;
+  llamaS.animT += dt;
+  llamaS.spitT += dt;
+  if (llamaS.anim === "spit" && llamaS.spitT < animDur("llama", "spit", 0.5)) return;
+  if (Math.abs(v) > 5) llamaS.face = v > 0 ? 1 : -1;
+  setAnim(llamaS, Math.abs(v) > 150 ? "run" : Math.abs(v) > 12 ? "walk" : "idle");
 }
 function rect(x, y, w, h, c) {
   ctx.fillStyle = c;
@@ -335,7 +468,20 @@ function person(x, y, type, frame = 0) {
   } else rect(30, 30, type === 0 ? 8 : 24, 4, "#b4b3a2");
   ctx.restore();
 }
-function draw() {
+function sprite(kind, anim, t, x, y, w, h, facing) {
+  SPR.facing = facing;
+  SPR.w = w;
+  SPR.h = h;
+  return SP.draw(ctx, kind, anim, t, x, y, SPR);
+}
+function resetSpr() {
+  SPR.fill = 1;
+  SPR.flash = false;
+  SPR.alpha = 1;
+  SPR.rotation = 0;
+  SPR.active = false;
+}
+function drawLegacyBackground() {
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, "#274c5a");
   grad.addColorStop(1, "#a4b6a2");
@@ -352,8 +498,8 @@ function draw() {
     rect(x + 18, 365, 132, 16, "#697d65");
     rect(x + 35, 381, 115, 20, "#506d5d");
   }
-  ctx.save();
-  ctx.translate(-cam, 0);
+}
+function drawLegacyGround() {
   rect(0, GROUND, END, 100, "#716748");
   rect(0, GROUND, END, 8, "#c2b17d");
   for (let i = 0; i < END; i += 48) {
@@ -365,36 +511,77 @@ function draw() {
     rect(p.x + 8, p.y + 12, p.w - 16, GROUND - p.y - 12, "#7b8065");
     for (let j = 0; j < p.w; j += 40) rect(p.x + j + 5, p.y + 20, 32, 18, "#94957a");
   }
+}
+function drawPiles() {
   for (const x of piles) {
-    for (let i = 0; i < 5; i++) rect(x - 15 + i * 8, GROUND - 9 - (i % 2) * 7, 12, 9, "#c5c6ae");
-    rect(x, GROUND - 67, 3, 45, "#b39f72");
-    rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
-    if (player && Math.abs(player.x - x) < 85) {
+    const near = player && Math.abs(player.x - x) < 85;
+    if (SP) {
+      resetSpr();
+      SPR.active = near;
+      sprite("stone_pile", near ? "active" : "idle", renderT, x - 15, GROUND - 70, 40, 70, 1);
+    } else {
+      for (let i = 0; i < 5; i++) rect(x - 15 + i * 8, GROUND - 9 - (i % 2) * 7, 12, 9, "#c5c6ae");
+      rect(x, GROUND - 67, 3, 45, "#b39f72");
+      rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
+    }
+    if (near) {
       ctx.fillStyle = "#fff0bc";
       ctx.font = "bold 14px sans-serif";
       ctx.fillText("E · RECARGAR", x - 40, GROUND - 83);
     }
   }
-  if (player) {
-    let lx = world.llama;
-    rect(lx - 10, GROUND - 39, 42, 20, "#e6d6ad");
-    rect(lx + 23, GROUND - 62, 11, 37, "#e6d6ad");
-    rect(lx + 23, GROUND - 67, 22, 12, "#e6d6ad");
-    rect(lx + 25, GROUND - 77, 4, 12, "#e6d6ad");
-    rect(lx - 5, GROUND - 20, 6, 20, "#cab98f");
-    rect(lx + 23, GROUND - 20, 6, 20, "#cab98f");
-    rect(lx, GROUND - 40, 22, 16, "#a04d39");
-    for (const e of enemies)
-      if (!e.dead) {
-        person(e.x, e.y, e.type);
-        if (e.type === 3) {
-          rect(e.x - 10, e.y - 20, 110, 7, "#342f2a");
-          rect(e.x - 10, e.y - 20, (110 * e.hp) / e.max, 7, "#db7052");
-        }
-      }
-    if (player.inv <= 0 || Math.floor(player.inv * 10) % 2 === 0)
-      person(player.x, player.y, -1, player.ground ? Math.sin(world.time * 15) * 3 : 0);
-    for (const s of shots)
+}
+function drawLlama() {
+  const lx = world.llama;
+  if (SP) {
+    resetSpr();
+    sprite("llama", llamaS.anim, llamaS.animT, lx - 2, GROUND - 70, 40, 70, llamaS.face);
+    return;
+  }
+  rect(lx - 10, GROUND - 39, 42, 20, "#e6d6ad");
+  rect(lx + 23, GROUND - 62, 11, 37, "#e6d6ad");
+  rect(lx + 23, GROUND - 67, 22, 12, "#e6d6ad");
+  rect(lx + 25, GROUND - 77, 4, 12, "#e6d6ad");
+  rect(lx - 5, GROUND - 20, 6, 20, "#cab98f");
+  rect(lx + 23, GROUND - 20, 6, 20, "#cab98f");
+  rect(lx, GROUND - 40, 22, 16, "#a04d39");
+}
+// dead=true: solo los derrotados que salen volando (se dibujan antes del suelo para que
+// se pierdan detrás del terreno al caer); dead=false: vivos y el capitán derrotado.
+function drawEnemies(flying) {
+  for (const e of enemies) {
+    if (e.gone || (e.dead && !SP)) continue;
+    if (flying !== (e.dead && e.type !== 3)) continue;
+    if (SP) {
+      resetSpr();
+      SPR.flash = e.flash > 0;
+      SPR.rotation = e.rot;
+      sprite(ENEMY_KIND[e.type], e.anim || "idle", e.animT, e.x, e.y, e.w, e.h, e.face);
+    } else person(e.x, e.y + e.h - (e.type === 3 ? 96 : 48), e.type);
+    if (e.type === 3 && !e.dead) {
+      rect(e.x - 10, e.y - 20, 110, 7, "#342f2a");
+      rect(e.x - 10, e.y - 20, (110 * e.hp) / e.max, 7, "#db7052");
+    }
+  }
+}
+function drawPlayer() {
+  const blink = player.inv > 0 && Math.floor(player.inv * 10) % 2 !== 0;
+  if (SP) {
+    resetSpr();
+    SPR.fill = player.ammo / 24;
+    SPR.flash = player.flash > 0;
+    SPR.alpha = blink ? 0.45 : 1;
+    sprite("hero", player.anim, player.animT, player.x, player.y, player.w, player.h, player.face);
+  } else if (!blink)
+    person(player.x, player.y, -1, player.ground ? Math.sin(world.time * 15) * 3 : 0);
+}
+function drawShots() {
+  for (const s of shots) {
+    if (SP) {
+      resetSpr();
+      const kind = s.spit ? "spit" : s.good ? (s.fire ? "fire_stone" : "stone") : "bullet";
+      sprite(kind, "fly", world.time, s.x, s.y, 8, 8, s.vx < 0 ? -1 : 1);
+    } else
       rect(
         s.x,
         s.y,
@@ -402,9 +589,39 @@ function draw() {
         s.fire ? 10 : 6,
         s.good ? (s.fire ? "#ff9e49" : s.spit ? "#b3deac" : "#eee0b3") : "#ef7356",
       );
+  }
+}
+function drawFx() {
+  if (!SP) return;
+  for (const f of fx) {
+    resetSpr();
+    const sz = SP.size(f.kind);
+    const y = sz.anchor === "center" ? f.y - sz.h / 2 : f.y - sz.h;
+    sprite(f.kind, f.anim, f.t, f.x - sz.w / 2, y, sz.w, sz.h, f.face);
+  }
+}
+function draw() {
+  const camR = Math.round(cam);
+  if (BG) BG.drawBackground(ctx, camR, renderT, BG_OPTS);
+  else drawLegacyBackground();
+  ctx.save();
+  ctx.translate(-camR, 0);
+  if (player && SP) drawEnemies(true);
+  if (BG) {
+    BG.drawGround(ctx, 0, GROUND, END, H - GROUND, camR);
+    for (const p of platforms) BG.drawPlatform(ctx, p.x, p.y, p.w, GROUND - p.y, camR);
+  } else drawLegacyGround();
+  drawPiles();
+  if (player) {
+    drawLlama();
+    drawEnemies(false);
+    drawPlayer();
+    drawShots();
+    drawFx();
     for (const p of particles) rect(p.x, p.y, 4, 4, p.color);
   }
   ctx.restore();
+  if (BG && BG.drawForeground) BG.drawForeground(ctx, camR, renderT, BG_OPTS);
   rect(18, 18, 430, 58, "#102b30e8");
   ctx.font = "bold 16px sans-serif";
   ctx.fillStyle = "#f3d394";
@@ -439,7 +656,9 @@ function draw() {
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.033);
   last = t;
+  renderT += dt;
   if (state === "playing") update(dt);
+  else if (state === "won" || state === "lost") updateFx(dt);
   draw();
   requestAnimationFrame(loop);
 }
