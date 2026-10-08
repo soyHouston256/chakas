@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fondo Sacsayhuamán</title>
+<style>
+  :root { --bg: #1a1714; --fg: #efe3c8; --muted: #b5a684; --accent: #d9a441; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 16px; margin: 0 0 8px; color: var(--accent); letter-spacing: .04em; }
+  canvas { display: block; width: 100%; max-width: 960px; image-rendering: pixelated; border: 1px solid #3a332b; }
+  .ctl { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; max-width: 960px; margin-top: 10px; }
+  .ctl input[type=range] { flex: 1 1 300px; accent-color: var(--accent); }
+  .ctl span { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 160px; }
+</style>
+</head>
+<body>
+<h1>CHANKAS · fondo de Sacsayhuamán (1536) — vista previa</h1>
+<canvas id="c" width="960" height="540"></canvas>
+<div class="ctl">
+  <input id="cam" type="range" min="0" max="4200" step="1" value="0">
+  <label><input id="auto" type="checkbox" checked> auto-scroll</label>
+  <label><input id="fg" type="checkbox" checked> primer plano</label>
+  <span id="info"></span>
+</div>
+<script src="background.js"></script>
+<script>
+  var W = 960, H = 540, GROUND = 440, END = 4200;
+  var platforms = [{x:580,y:350,w:180},{x:1250,y:340,w:200},{x:2100,y:345,w:180},{x:2820,y:330,w:220}];
+  var c = document.getElementById('c'), ctx = c.getContext('2d');
+  var slider = document.getElementById('cam'), auto = document.getElementById('auto'), fg = document.getElementById('fg'), info = document.getElementById('info');
+  slider.max = END - W;
+  slider.oninput = function () { auto.checked = false; };
+  var BG = window.ChankasBackground, cam = 0, dirn = 1, last = performance.now(), fps = 60;
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    fps = fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
+    if (auto.checked) {
+      cam += dirn * 160 * dt;
+      if (cam > END - W) { cam = END - W; dirn = -1; }
+      if (cam < 0) { cam = 0; dirn = 1; }
+      slider.value = Math.round(cam);
+    } else cam = +slider.value;
+    var t = now / 1000;
+    BG.drawBackground(ctx, cam, t, { width: W, height: H, levelLength: END });
+    ctx.save();
+    ctx.translate(-Math.round(cam), 0);
+    BG.drawGround(ctx, 0, GROUND, END, H - GROUND, cam);
+    for (var i = 0; i < platforms.length; i++) {
+      var p = platforms[i];
+      BG.drawPlatform(ctx, p.x, p.y, p.w, GROUND - p.y, cam);
+    }
+    // marcador del jugador (58 px de alto) para escala
+    ctx.fillStyle = '#b94437';
+    ctx.fillRect(Math.round(cam) + 280, GROUND - 58, 28, 58);
+    ctx.restore();
+    if (fg.checked) BG.drawForeground(ctx, cam, t, { width: W, height: H, levelLength: END });
+    info.textContent = 'cameraX ' + Math.round(cam) + ' / ' + (END - W) + ' · ' + Math.round(fps) + ' fps';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

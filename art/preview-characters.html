@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHANKAS · sprites</title>
+<style>
+  :root { --bg: #1d2426; --fg: #f3e7cc; --card: #283234; --line: #3c4a4c; --cell: #314043; }
+  body.light { --bg: #e9e2d0; --fg: #2b2320; --card: #f6f1e4; --line: #cbbf9f; --cell: #a4b6a2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 10px 0 0; letter-spacing: .08em; }
+  label { display: inline-flex; gap: 6px; align-items: center; }
+  main { padding: 16px; }
+  section { margin-bottom: 22px; }
+  section h2 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .06em; }
+  section h2 small { font-weight: 400; opacity: .7; text-transform: none; letter-spacing: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+  figcaption { font-size: 12px; opacity: .85; padding-top: 4px; }
+  canvas { display: block; background: var(--cell); image-rendering: pixelated; }
+  .hb { opacity: .8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CHANKAS · SPRITES</h1>
+  <label><input type="checkbox" id="facing"> Mirar a la izquierda</label>
+  <label><input type="checkbox" id="light"> Fondo claro</label>
+  <label><input type="checkbox" id="hit" > Mostrar hitbox</label>
+  <label><input type="checkbox" id="flash"> Flash</label>
+  <label>Escala <select id="scale"><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option></select></label>
+  <label>Manta (fill) <input type="range" id="fill" min="0" max="1" step="0.01" value="0.7"></label>
+  <label><input type="checkbox" id="spin"> Rotación (salir volando)</label>
+</header>
+<main id="main"></main>
+<script src="sprites.js"></script>
+<script>
+(function () {
+  var S = window.ChankasSprites, main = document.getElementById('main');
+  var $ = function (id) { return document.getElementById(id); };
+  var cells = [], list = S.list();
+  function build() {
+    main.innerHTML = ''; cells = [];
+    var scale = +$('scale').value;
+    Object.keys(list).forEach(function (kind) {
+      var info = list[kind], sz = S.size(kind);
+      var sec = document.createElement('section');
+      sec.innerHTML = '<h2>' + kind + ' <small>hitbox ' + sz.w + '×' + sz.h + ' · ancla ' + sz.anchor + ' · frame ' + sz.frameW + '×' + sz.frameH + ' @' + sz.scale + '×</small></h2>';
+      var row = document.createElement('div'); row.className = 'row';
+      Object.keys(info.anims).forEach(function (anim) {
+        var a = info.anims[anim];
+        var fig = document.createElement('figure');
+        var cv = document.createElement('canvas');
+        var k = scale / sz.scale;
+        var cw = Math.ceil(sz.frameW * scale + 16), ch = Math.ceil(sz.frameH * scale + 16);
+        cv.width = cw; cv.height = ch;
+        fig.appendChild(cv);
+        var cap = document.createElement('figcaption');
+        cap.textContent = anim + ' · ' + a.frames + 'f @ ' + a.fps + 'fps' + (a.loop ? '' : ' (una vez)');
+        fig.appendChild(cap); row.appendChild(fig);
+        cells.push({ kind: kind, anim: anim, cv: cv, k: k, sz: sz, a: a });
+      });
+      sec.appendChild(row); main.appendChild(sec);
+    });
+  }
+  function frame(now) {
+    var t = now / 1000, facing = $('facing').checked ? -1 : 1, scale = +$('scale').value;
+    var fill = +$('fill').value, flash = $('flash').checked ? (Math.sin(t * 20) > 0 ? 0.9 : 0) : 0;
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i], ctx = c.cv.getContext('2d');
+      ctx.clearRect(0, 0, c.cv.width, c.cv.height);
+      var dur = c.a.frames / c.a.fps, tt = c.a.loop ? t : (t % (dur + 0.6));
+      // hitbox escalado al mismo factor que el sprite
+      var bw = c.sz.w * c.k, bh = c.sz.h * c.k;
+      var ax = c.sz.anchorX * scale + 8, ay = c.sz.anchorY * scale + 8;
+      if (facing < 0) ax = c.cv.width - ax;
+      var x = ax - bw / 2, y = c.sz.anchor === 'center' ? ay - bh / 2 : ay - bh;
+      ctx.save();
+      S.draw(ctx, c.kind, c.anim, tt, x, y, {
+        facing: facing, scale: scale, w: bw, h: bh, fill: fill, flash: flash,
+        active: c.anim === 'active', rotation: $('spin').checked ? t * 9 : 0
+      });
+      ctx.restore();
+      if ($('hit').checked) { ctx.strokeStyle = 'rgba(255,80,80,.8)'; ctx.strokeRect(x + .5, y + .5, bw, bh); }
+    }
+    requestAnimationFrame(frame);
+  }
+  $('light').onchange = function () { document.body.classList.toggle('light', this.checked); };
+  $('scale').onchange = build;
+  build();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

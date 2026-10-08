@@ -1,0 +1,1 @@
+{"name":"chankas-huaraca","version":"0.1.0","private":true,"scripts":{"dev":"python3 -m http.server 5173","check":"node --check game.js","test":"node tests/game.cjs"}}
