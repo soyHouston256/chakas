@@ -29,6 +29,22 @@ const W = 960,
   H = 540,
   GROUND = 440,
   END = 4200;
+const MAX_HP = 6,
+  MAX_AMMO = 24,
+  MAX_BOLA = 3,
+  HUD_HEARTS = 6; // corazones dibujados como máximo; si hay más se muestra «♥×N»
+// Disparo enemigo: solo con el tirador visible (margen interior) y a distancia de cámara.
+const FIRE_MARGIN = 12,
+  FIRE_RANGE = 620;
+// Jefe: preparación visible antes de cada disparo y patrones alternos (nunca alto+bajo a la vez).
+const BOSS_WIND = 0.55,
+  BOSS_WIND_P2 = 0.42,
+  BOSS_PATTERN = ["low", "high", "low", "high", "low", "low"];
+// Respawn en la apacheta: munición mínima garantizada e invulnerabilidad breve.
+const RESPAWN_AMMO = 12,
+  RESPAWN_FIRE = 2,
+  RESPAWN_BOLA = 1,
+  RESPAWN_INV = 2.2;
 const piles = [180, 850, 1600, 2450, 3200];
 const platforms = [
   { x: 580, y: 350, w: 180 },
@@ -58,9 +74,12 @@ function reset() {
     w: 28,
     h: 58,
     vy: 0,
-    hp: 6,
-    ammo: 24,
+    hp: MAX_HP,
+    ammo: MAX_AMMO,
     fire: 5,
+    bola: MAX_BOLA,
+    kb: 0,
+    melee: 0,
     face: 1,
     cool: 0,
     inv: 0,
@@ -74,7 +93,7 @@ function reset() {
   particles = [];
   score = 0;
   cam = 0;
-  world = { time: 0, llama: 20, spit: 0, checkpoint: 70 };
+  world = { time: 0, llama: 20, spit: 0, checkpoint: 70, cpPile: -1, deaths: 0 };
   fx = [];
   llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9 };
   enemies = [];
@@ -111,9 +130,72 @@ function reset() {
   });
   state = "playing";
   overlay.style.display = "none";
+  restartBtn.hidden = true;
+}
+// Revivir en la última apacheta activada: los enemigos derrotados siguen derrotados,
+// los vivos vuelven a su puesto (el jefe conserva el daño recibido) y la munición
+// sube a un mínimo razonable.
+function respawn() {
+  world.deaths++;
+  Object.assign(player, {
+    x: world.checkpoint,
+    y: GROUND - player.h,
+    vy: 0,
+    kb: 0,
+    hp: MAX_HP,
+    ammo: Math.max(player.ammo, RESPAWN_AMMO),
+    fire: Math.max(player.fire, RESPAWN_FIRE),
+    bola: Math.max(player.bola, RESPAWN_BOLA),
+    cool: 0.3,
+    inv: RESPAWN_INV,
+    ground: true,
+    throwT: 0,
+    flash: 0,
+    melee: 0,
+    face: 1,
+  });
+  restartAnim(player, "idle");
+  for (const e of enemies) {
+    if (e.dead) continue;
+    e.x = e.home;
+    e.y = GROUND - e.h;
+    e.cool = 1.2;
+    e.stun = 0;
+    e.wind = 0;
+    e.lunge = 0;
+    e.flash = 0;
+    restartAnim(e, "");
+  }
+  shots = [];
+  particles = [];
+  world.llama = player.x - 80;
+  world.spit = 1;
+  llamaS.prev = world.llama;
+  cam = Math.max(0, Math.min(END - W, player.x - 280));
+  state = "playing";
+  overlay.style.display = "none";
+  restartBtn.hidden = true;
+  spawnFx("dust", "puff", player.x + player.w / 2, player.y + player.h - 6);
 }
 function animFields() {
-  return { anim: "", animT: 0, face: -1, flash: 0, fvx: 0, fvy: 0, rot: 0, spin: 0, gone: false };
+  return {
+    anim: "",
+    animT: 0,
+    face: -1,
+    flash: 0,
+    fvx: 0,
+    fvy: 0,
+    rot: 0,
+    spin: 0,
+    gone: false,
+    stun: 0,
+    wind: 0,
+    lunge: 0,
+    lvx: 0,
+    shotN: 0,
+    pat: "",
+    wdir: -1,
+  };
 }
 // Cambia de animación solo si es distinta (reinicia el temporizador de la acción).
 function setAnim(o, a) {
@@ -153,17 +235,25 @@ function updateFx(dt) {
     if (e.y > H + 100 || e.x + e.w < cam - 150 || e.x > cam + W + 150) e.gone = true;
   }
 }
-function show(title, message, label) {
+const restartBtn = document.querySelector("#restart");
+function show(title, message, label, restart = false) {
   document.querySelector("#title").textContent = title;
   document.querySelector("#message").textContent = message;
   document.querySelector("#start").textContent = label;
+  restartBtn.hidden = !restart;
   overlay.style.display = "flex";
 }
-document.querySelector("#start").onclick = () => {
+document.querySelector("#start").onclick = (e) => {
+  e?.currentTarget?.blur?.();
   if (state === "paused") {
     state = "playing";
     overlay.style.display = "none";
-  } else reset();
+  } else if (state === "lost") respawn();
+  else reset();
+};
+restartBtn.onclick = (e) => {
+  e?.currentTarget?.blur?.();
+  reset();
 };
 document.querySelector("#sound").onclick = () => {
   sound = !sound;
@@ -209,25 +299,109 @@ function burst(x, y, color, n = 12) {
       color,
     });
 }
-function hit() {
-  if (player.inv > 0) return;
+// Daño al héroe. srcX = centro horizontal de lo que golpea (empuje en sentido contrario).
+// Fuera de "playing" no hace nada: si el jefe cae en el mismo frame, gana la victoria.
+// La derrota se resuelve al final de update() (ver resolveDeath).
+function hit(srcX, push = 260) {
+  if (state !== "playing" || player.inv > 0 || player.hp <= 0) return;
   player.hp--;
   player.inv = 1.5;
   player.flash = 0.12;
   player.throwT = 0;
+  player.melee = 0;
+  const pc = player.x + player.w / 2;
+  const away = srcX == null ? -player.face : pc >= srcX ? 1 : -1;
+  player.kb = away * push;
+  if (player.ground) {
+    player.vy = -240;
+    player.ground = false;
+  }
   restartAnim(player, player.hp <= 0 ? "dead" : "hurt");
   burst(player.x, player.y, "#e9b25f");
   tone(130);
-  if (player.hp <= 0) {
-    state = "lost";
-    show(
-      "El camino aún te necesita",
-      "Vuelve a intentarlo. Recarga en los montones de piedras y salta los proyectiles.",
-      "Volver a jugar →",
-    );
+}
+function resolveDeath() {
+  if (state !== "playing" || player.hp > 0) return;
+  state = "lost";
+  show(
+    "El camino aún te necesita",
+    "Vuelves a la última apacheta con piedras de reserva. Los caídos no se levantan.",
+    "Continuar desde la apacheta →",
+    true,
+  );
+}
+function win() {
+  state = "won";
+  show(
+    "¡El paso es nuestro!",
+    "Abriste el camino junto a tu llama. Quipu: " +
+      score +
+      " puntos. Esta es la primera etapa de CHANKAS.",
+    "Jugar otra vez →",
+  );
+}
+// Macana: golpe corto de respaldo cuando la manta está vacía (el jefe siempre es vencible).
+const MELEE = { reach: 50, damage: 1, cool: 0.42 };
+function melee() {
+  if (player.cool > 0) return;
+  player.cool = MELEE.cool;
+  player.melee = 0.16;
+  restartAnim(player, "throw");
+  player.throwT = animDur("hero", "throw", 0.3);
+  const box = meleeBox();
+  let hitAny = false;
+  for (const e of enemies)
+    if (!e.dead && hitsEnemy(box, e)) {
+      hitAny = true;
+      damageEnemy(e, MELEE.damage, player.face * 300, box.x + box.w / 2, box.y + 20);
+      if (state !== "playing") break;
+    }
+  tone(hitAny ? 180 : 420);
+}
+function meleeBox() {
+  const cx = player.x + player.w / 2;
+  return {
+    x: player.face > 0 ? cx : cx - MELEE.reach,
+    y: player.y + 6,
+    w: MELEE.reach,
+    h: player.h - 10,
+  };
+}
+// Boleadora: tiro en arco, pocas unidades, aturde (no mata de un golpe).
+function throwBola() {
+  if (player.cool > 0 || player.bola <= 0) return;
+  player.bola--;
+  player.cool = 0.5;
+  restartAnim(player, "throw");
+  player.throwT = animDur("hero", "throw", 0.3);
+  shots.push({
+    x: player.x + 14,
+    y: player.y + 18,
+    vx: player.face * 430,
+    vy: -300,
+    life: 1.6,
+    good: true,
+    damage: 1,
+    bola: true,
+  });
+  tone(380);
+}
+function damageEnemy(e, dmg, vx, fxX, fxY) {
+  e.hp -= dmg;
+  e.flash = 0.1;
+  spawnFx("hit_spark", "burst", fxX, fxY);
+  if (e.hp <= 0) {
+    e.dead = true;
+    e.wind = 0;
+    defeat(e, vx);
+    score += e.type === 3 ? 1000 : 100;
+    burst(e.x, e.y, "#d6c5a3", 22);
+    tone(700);
+    if (e.type === 3) win();
   }
 }
 function shoot(fire) {
+  if (!fire && player.ammo <= 0) return melee();
   if (player.cool > 0 || player.ammo <= 0 || (fire && player.fire <= 0)) return;
   player.ammo--;
   if (fire) player.fire--;
@@ -254,6 +428,14 @@ function hitsEnemy(s, e) {
   const top = e.y - (e.hurtPad || 0);
   return s.x < e.x + e.w && s.x + (s.w || 8) > e.x && s.y < e.y + e.h && s.y + (s.h || 8) > top;
 }
+// Enemigo visible en la ventana de cámara (con margen interior) y a distancia de tiro.
+function canFire(e) {
+  const visible = e.x + e.w > cam + FIRE_MARGIN && e.x < cam + W - FIRE_MARGIN;
+  return visible && Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < FIRE_RANGE;
+}
+function nearPile() {
+  return piles.findIndex((x) => Math.abs(player.x - x) < 85);
+}
 function update(dt) {
   world.time += dt;
   player.cool -= dt;
@@ -261,11 +443,15 @@ function update(dt) {
   player.animT += dt;
   player.throwT -= dt;
   player.flash -= dt;
+  player.melee -= dt;
   const wasGround = player.ground;
   let direction =
     (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
     (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
-  player.x = Math.max(0, Math.min(END - 40, player.x + direction * 230 * dt));
+  if (player.hp <= 0) direction = 0;
+  player.x = Math.max(0, Math.min(END - 40, player.x + (direction * 230 + player.kb) * dt));
+  player.kb *= Math.max(0, 1 - 7 * dt);
+  if (Math.abs(player.kb) < 5) player.kb = 0;
   if (direction) player.face = direction;
   if ((keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW")) && player.ground) {
     player.vy = -510;
@@ -295,9 +481,18 @@ function update(dt) {
   }
   if (keys.has("KeyJ")) shoot(false);
   if (keys.has("KeyK")) shoot(true);
-  if (keys.has("KeyE") && piles.some((x) => Math.abs(player.x - x) < 85)) {
-    player.ammo = 24;
-    world.checkpoint = player.x;
+  if (keys.has("KeyL")) throwBola();
+  const pi = nearPile();
+  if (pi >= 0 && pi > world.cpPile) {
+    // Apacheta nueva: se convierte en el punto de reaparición (bandera izada).
+    world.cpPile = pi;
+    world.checkpoint = piles[pi];
+    tone(620);
+    spawnFx("dust", "puff", piles[pi] + 5, GROUND - 6);
+  }
+  if (keys.has("KeyE") && pi >= 0) {
+    player.ammo = MAX_AMMO;
+    player.bola = Math.max(player.bola, MAX_BOLA);
   }
   world.llama += (player.x - 80 - world.llama) * dt * 3;
   world.spit -= dt;
@@ -308,33 +503,36 @@ function update(dt) {
     e.cool -= dt;
     e.animT += dt;
     e.flash -= dt;
-    if (e.type === 0) e.x += dir * 65 * dt;
-    else if (e.type === 2) e.x = e.home + Math.sin(world.time * 1.8) * 85;
-    else if (e.type === 3) e.x += dir * 45 * dt;
-    enemyAnim(e, dir, prevX);
-    if (overlap(player, e)) hit();
-    if (e.cool <= 0 && Math.abs(e.x - player.x) < 650) {
-      e.cool = e.type === 3 ? 0.85 : e.type === 1 ? 1.8 : 2.5;
-      e.face = dir;
-      restartAnim(e, ENEMY_ATTACK[e.type]);
-      if (e.type === 1 || e.type === 3)
-        spawnFx("muzzle_flash", "burst", dir > 0 ? e.x + e.w + 6 : e.x - 6, e.y + (e.type === 3 ? 40 : 20), dir);
-      shots.push({
-        x: e.x,
-        y: e.y + 22,
-        vx: dir * (e.type === 3 ? 300 : 240),
-        vy: 0,
-        life: 3,
-        good: false,
-      });
-      if (e.type === 3)
-        shots.push({ x: e.x, y: e.y + 55, vx: dir * 330, vy: 0, life: 3, good: false });
+    e.stun -= dt;
+    const touching = overlap(player, e);
+    if (e.stun > 0) {
+      // Aturdido por la boleadora: ni se mueve ni ataca (sí hace daño al tocarlo).
+      e.wind = 0;
+      e.lunge = 0;
+      setAnim(e, e.type === 3 ? "hurt" : "stunned");
+    } else if (e.type === 0) updateDog(e, dir, dt, touching);
+    else {
+      if (e.type === 2) e.x = e.home + Math.sin(world.time * 1.8) * 85;
+      else if (e.type === 3 && !touching && e.wind <= 0) e.x += dir * 45 * dt;
+      enemyAnim(e, dir, prevX);
+      if (e.type === 3) updateBoss(e, dir, dt);
+      else if (e.cool <= 0 && canFire(e)) {
+        e.cool = e.type === 1 ? 1.8 : 2.5;
+        e.face = dir;
+        restartAnim(e, ENEMY_ATTACK[e.type]);
+        if (e.type === 1)
+          spawnFx("muzzle_flash", "burst", dir > 0 ? e.x + e.w + 6 : e.x - 6, e.y + 20, dir);
+        shots.push({ x: e.x, y: e.y + 22, vx: dir * 240, vy: 0, life: 3, good: false });
+      }
     }
+    if (touching) hit(e.x + e.w / 2, e.type === 3 ? 340 : 260);
     if (Math.abs(e.x - world.llama) < 240 && world.spit <= 0) {
+      // La llama escupe hacia el enemigo, no hacia donde mira el héroe.
+      const sdir = e.x + e.w / 2 >= world.llama + 12 ? 1 : -1;
       shots.push({
         x: world.llama + 12,
         y: GROUND - 48,
-        vx: dir * -400,
+        vx: sdir * 400,
         vy: 0,
         life: 0.65,
         good: true,
@@ -344,44 +542,36 @@ function update(dt) {
       world.spit = 2.8;
       restartAnim(llamaS, "spit");
       llamaS.spitT = 0;
-      llamaS.face = dir * -1;
+      llamaS.face = sdir;
     }
   }
   for (const s of shots) {
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     if (s.fire) s.vy += 200 * dt;
+    if (s.bola) {
+      s.vy += 900 * dt;
+      if (s.y > GROUND - 6) s.life = 0;
+    }
     s.life -= dt;
+    if (s.life <= 0) continue;
     if (s.good) {
       for (const e of enemies)
         if (!e.dead && hitsEnemy(s, e)) {
-          e.hp -= s.damage;
           s.life = 0;
-          e.flash = 0.1;
-          spawnFx("hit_spark", "burst", s.x + 4, s.y + 4);
           burst(s.x, s.y, s.fire ? "#f09e47" : "#eddb9c", 5);
-          if (e.hp <= 0) {
-            e.dead = true;
-            defeat(e, s.vx);
-            score += e.type === 3 ? 1000 : 100;
-            burst(e.x, e.y, "#d6c5a3", 22);
-            tone(700);
-            if (e.type === 3) {
-              state = "won";
-              show(
-                "¡El paso es nuestro!",
-                "Abriste el camino junto a tu llama. Quipu: " +
-                  score +
-                  " puntos. Esta es la primera etapa de CHANKAS.",
-                "Jugar otra vez →",
-              );
-            }
+          if (s.bola) {
+            e.stun = e.type === 3 ? 0.7 : 2;
+            e.wind = 0;
+            e.lunge = 0;
+            restartAnim(e, e.type === 3 ? "hurt" : "stunned");
           }
+          damageEnemy(e, s.damage, s.vx, s.x + 4, s.y + 4);
           break;
         }
     } else if (overlap(s, player)) {
       s.life = 0;
-      hit();
+      hit(s.x - s.vx, 160);
     }
   }
   shots = shots.filter((s) => s.life > 0);
@@ -396,9 +586,64 @@ function update(dt) {
   heroAnim(direction);
   updateFx(dt);
   cam = Math.max(0, Math.min(END - W, player.x - 280));
+  resolveDeath();
+}
+// Perro alano: corre hacia el héroe y muerde con una embestida corta (sin balas).
+const DOG = { speed: 70, range: 150, lunge: 0.36, lungeV: 400, cool: 1.3 };
+function updateDog(e, dir, dt, touching) {
+  if (e.lunge > 0) {
+    e.lunge -= dt;
+    e.x += e.lvx * dt;
+    return;
+  }
+  e.face = dir;
+  const dx = Math.abs(e.x + e.w / 2 - (player.x + player.w / 2));
+  if (e.cool <= 0 && dx < DOG.range && canFire(e)) {
+    e.lunge = DOG.lunge;
+    e.lvx = dir * DOG.lungeV;
+    e.cool = DOG.cool + DOG.lunge;
+    restartAnim(e, "lunge");
+    spawnFx("dust", "puff", e.x + e.w / 2, e.y + e.h - 4);
+    tone(240);
+    return;
+  }
+  // Tras morder se queda un instante quieto (ventana para contraatacar).
+  if (!touching && e.cool < DOG.cool - 0.45) e.x += dir * DOG.speed * dt;
+  if (e.anim !== "lunge" || e.animT > animDur("perro", "lunge", 0.375)) setAnim(e, "run");
+}
+// Capitán: anuncia cada disparo (pose 'shoot' + destello + marca de altura) y alterna
+// disparos altos (quedarse en el suelo) y bajos (saltar). Fase 2 con <50 % de vida.
+function updateBoss(e, dir, dt) {
+  const p2 = e.hp <= e.max / 2;
+  if (e.wind > 0) {
+    e.wind -= dt;
+    e.face = e.wdir;
+    if (e.wind > 0) return;
+    const y = e.pat === "high" ? e.y + 22 : e.y + 55;
+    spawnFx("muzzle_flash", "burst", e.wdir > 0 ? e.x + e.w + 6 : e.x - 6, y + 4, e.wdir);
+    shots.push({
+      x: e.wdir > 0 ? e.x + e.w - 8 : e.x,
+      y,
+      vx: e.wdir * (p2 ? 330 : 300),
+      vy: 0,
+      life: 3,
+      good: false,
+    });
+    e.cool = p2 ? 0.95 : 1.35;
+    tone(160);
+    return;
+  }
+  if (e.cool <= 0 && canFire(e)) {
+    e.pat = BOSS_PATTERN[e.shotN++ % BOSS_PATTERN.length];
+    e.wind = p2 ? BOSS_WIND_P2 : BOSS_WIND;
+    e.wdir = dir;
+    e.face = dir;
+    restartAnim(e, "shoot");
+  }
 }
 const ENEMY_ATTACK = ["lunge", "fire", "thrust", "shoot"];
 function enemyAnim(e, dir, prevX) {
+  if (e.type === 3 && e.wind > 0) return; // preparando disparo: mantiene la pose
   const busy = e.animT < animDur(ENEMY_KIND[e.type], e.anim, 0.4);
   if (e.type === 2) {
     // patrulla: mira hacia donde camina salvo mientras ataca
@@ -410,8 +655,7 @@ function enemyAnim(e, dir, prevX) {
   else if (e.type === 2) setAnim(e, "walk");
   else if (Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < 90) {
     if (e.anim !== "slash" || !busy) restartAnim(e, "slash");
-  }
-  else setAnim(e, "walk");
+  } else setAnim(e, "walk");
 }
 // Enemigo derrotado: sale volando girando (sin sangre); el capitán se arrodilla.
 function defeat(e, vx) {
@@ -522,23 +766,25 @@ function drawLegacyGround() {
   }
 }
 function drawPiles() {
-  for (const x of piles) {
+  piles.forEach((x, i) => {
     const near = player && Math.abs(player.x - x) < 85;
+    // Bandera izada solo en la apacheta activada (punto de reaparición).
+    const active = !!world && world.cpPile === i;
     if (SP) {
       resetSpr();
-      SPR.active = near;
-      sprite("stone_pile", near ? "active" : "idle", renderT, x - 15, GROUND - 70, 40, 70, 1);
+      SPR.active = active;
+      sprite("stone_pile", active ? "active" : "idle", renderT, x - 15, GROUND - 70, 40, 70, 1);
     } else {
       for (let i = 0; i < 5; i++) rect(x - 15 + i * 8, GROUND - 9 - (i % 2) * 7, 12, 9, "#c5c6ae");
-      rect(x, GROUND - 67, 3, 45, "#b39f72");
-      rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
+      rect(x, GROUND - (active ? 67 : 30), 3, active ? 45 : 8, "#b39f72");
+      if (active) rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
     }
     if (near) {
       ctx.fillStyle = "#fff0bc";
       ctx.font = "bold 14px sans-serif";
       ctx.fillText("E · RECARGAR", x - 40, GROUND - 83);
     }
-  }
+  });
 }
 function drawLlama() {
   const lx = world.llama;
@@ -567,11 +813,29 @@ function drawEnemies(flying) {
       SPR.rotation = e.rot;
       sprite(ENEMY_KIND[e.type], e.anim || "idle", e.animT, e.x, e.y, e.w, e.h, e.face);
     } else person(e.x, e.y + e.h - (e.type === 3 ? 96 : 48), e.type);
+    if (e.type === 3 && !e.dead && e.wind > 0) drawTelegraph(e);
     if (e.type === 3 && !e.dead) {
       rect(e.x - 10, e.y - 20, 110, 7, "#342f2a");
       rect(e.x - 10, e.y - 20, (110 * e.hp) / e.max, 7, "#db7052");
     }
   }
+}
+// Aviso del jefe: el cuerpo parpadea y una marca indica la altura del disparo
+// (alto = quédate en el suelo, bajo = salta).
+function drawTelegraph(e) {
+  const on = Math.floor(e.wind * 14) % 2 === 0;
+  const y = e.pat === "high" ? e.y + 22 : e.y + 55;
+  const x = e.wdir > 0 ? e.x + e.w + 4 : e.x - 22;
+  if (SP && on) {
+    resetSpr();
+    SPR.flash = true;
+    SPR.alpha = 0.55;
+    sprite("capitan", e.anim || "shoot", e.animT, e.x, e.y, e.w, e.h, e.face);
+  }
+  rect(x, y - 2, 18, 12, on ? "#ffdf6b" : "#d9472f");
+  ctx.fillStyle = "#1b1410";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText("!", x + 7, y + 8);
 }
 function drawPlayer() {
   const blink = player.inv > 0 && Math.floor(player.inv * 10) % 2 !== 0;
@@ -583,20 +847,55 @@ function drawPlayer() {
     sprite("hero", player.anim, player.animT, player.x, player.y, player.w, player.h, player.face);
   } else if (!blink)
     person(player.x, player.y, -1, player.ground ? Math.sin(world.time * 15) * 3 : 0);
+  if (player.melee > 0) {
+    // Golpe de macana: arco corto delante del héroe.
+    const cx = player.x + player.w / 2 + player.face * 12,
+      cy = player.y + 26,
+      k = 1 - player.melee / 0.16;
+    ctx.strokeStyle = "#fff0bc";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    const a0 = player.face > 0 ? -1.3 + k * 0.9 : Math.PI + 1.3 - k * 0.9;
+    ctx.arc(
+      cx,
+      cy,
+      MELEE.reach - 8,
+      Math.min(a0, a0 + player.face * 1.4),
+      Math.max(a0, a0 + player.face * 1.4),
+    );
+    ctx.stroke();
+    rect(player.face > 0 ? cx + 14 : cx - 30, cy - 4, 16, 6, "#6b4a32");
+  }
 }
 function drawShots() {
   for (const s of shots) {
     if (SP) {
       resetSpr();
-      const kind = s.spit ? "spit" : s.good ? (s.fire ? "fire_stone" : "stone") : "bullet";
-      sprite(kind, "fly", world.time, s.x, s.y, 8, 8, s.vx < 0 ? -1 : 1);
+      const kind = s.bola
+        ? "boleadora"
+        : s.spit
+          ? "spit"
+          : s.good
+            ? s.fire
+              ? "fire_stone"
+              : "stone"
+            : "bullet";
+      sprite(kind, s.bola ? "spin" : "fly", world.time, s.x, s.y, 8, 8, s.vx < 0 ? -1 : 1);
     } else
       rect(
         s.x,
         s.y,
-        s.fire ? 13 : 7,
-        s.fire ? 10 : 6,
-        s.good ? (s.fire ? "#ff9e49" : s.spit ? "#b3deac" : "#eee0b3") : "#ef7356",
+        s.fire || s.bola ? 13 : 7,
+        s.fire || s.bola ? 10 : 6,
+        s.good
+          ? s.bola
+            ? "#c9a46a"
+            : s.fire
+              ? "#ff9e49"
+              : s.spit
+                ? "#b3deac"
+                : "#eee0b3"
+          : "#ef7356",
       );
   }
 }
@@ -631,36 +930,47 @@ function draw() {
   }
   ctx.restore();
   if (BG && BG.drawForeground) BG.drawForeground(ctx, camR, renderT, BG_OPTS);
-  rect(18, 18, 430, 58, "#102b30e8");
+  rect(18, 18, HUD_W, 58, "#102b30e8");
   ctx.font = "bold 16px sans-serif";
   ctx.fillStyle = "#f3d394";
   ctx.fillText("CHANKAS", 34, 42);
   if (player) {
     ctx.font = "14px sans-serif";
     ctx.fillStyle = "#f6e9cc";
-    ctx.fillText(
-      "VIDA " +
-        "♥".repeat(Math.max(0, player.hp)) +
-        "   PIEDRAS " +
-        player.ammo +
-        "/24   FUEGO " +
-        player.fire,
-      34,
-      63,
-    );
+    ctx.fillText(hudLine(), 34, 63);
     ctx.textAlign = "right";
     ctx.fillText("QUIPU " + score, W - 28, 38);
     ctx.fillText(Math.round((player.x / END) * 100) + "% DEL CAMINO", W - 28, 60);
     ctx.textAlign = "left";
     if (player.ammo === 0) {
       ctx.fillStyle = "#f8d48c";
-      ctx.fillText("Manta vacía: vuelve a una bandera y pulsa E", 260, 105);
+      ctx.fillText("Manta vacía: J golpea con la macana · recarga en una apacheta (E)", 230, 128);
     }
     if (player.x > 3400) {
       ctx.fillStyle = "#f8d48c";
       ctx.fillText("CAPITÁN DE LA EXPEDICIÓN", 580, 100);
     }
   }
+}
+const HUD_W = 470;
+// Corazones con tope: nunca desbordan el panel (con más vida se muestra «♥×N»).
+function hudHearts(hp) {
+  hp = Math.max(0, Math.floor(hp));
+  return hp > HUD_HEARTS ? "♥×" + hp : "♥".repeat(hp);
+}
+function hudLine() {
+  return (
+    "VIDA " +
+    hudHearts(player.hp) +
+    "   PIEDRAS " +
+    player.ammo +
+    "/" +
+    MAX_AMMO +
+    "   FUEGO " +
+    player.fire +
+    "   BOLAS " +
+    player.bola
+  );
 }
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.033);
