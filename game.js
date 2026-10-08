@@ -85,6 +85,9 @@ function reset() {
       y: GROUND - (dog ? DOG_H : 48),
       w: dog ? DOG_W : 30,
       h: dog ? DOG_H : 48,
+      // El cuerpo del perro es bajo, pero recibe impactos en la misma franja vertical que
+      // los demás enemigos (48 px) para que piedras y escupitajos sigan acertándole.
+      hurtPad: dog ? 48 - DOG_H : 0,
       hp: 3,
       type: i % 3,
       cool: 1 + (i % 2),
@@ -211,6 +214,7 @@ function hit() {
   player.hp--;
   player.inv = 1.5;
   player.flash = 0.12;
+  player.throwT = 0;
   restartAnim(player, player.hp <= 0 ? "dead" : "hurt");
   burst(player.x, player.y, "#e9b25f");
   tone(130);
@@ -244,6 +248,11 @@ function shoot(fire) {
 }
 function overlap(a, b) {
   return a.x < b.x + b.w && a.x + (a.w || 8) > b.x && a.y < b.y + b.h && a.y + (a.h || 8) > b.y;
+}
+// Impacto de proyectil aliado: como overlap(), pero con la zona de impacto ampliada hacia arriba.
+function hitsEnemy(s, e) {
+  const top = e.y - (e.hurtPad || 0);
+  return s.x < e.x + e.w && s.x + (s.w || 8) > e.x && s.y < e.y + e.h && s.y + (s.h || 8) > top;
 }
 function update(dt) {
   world.time += dt;
@@ -345,7 +354,7 @@ function update(dt) {
     s.life -= dt;
     if (s.good) {
       for (const e of enemies)
-        if (!e.dead && overlap(s, e)) {
+        if (!e.dead && hitsEnemy(s, e)) {
           e.hp -= s.damage;
           s.life = 0;
           e.flash = 0.1;

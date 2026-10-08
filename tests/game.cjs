@@ -82,6 +82,15 @@ run("reset()");
 assert.equal(run("enemies[0].type"), 0);
 assert.equal(run("enemies[0].w + 'x' + enemies[0].h"), "44x26");
 assert.equal(run("enemies[0].y + enemies[0].h"), 440);
+// Piedras (a la altura de la mano) y escupitajos de la llama siguen acertando al perro.
+run("const d=enemies[0]; d.hp=3; shots.length=0; shots.push({x:d.x+10,y:player.y+23,vx:0,vy:0,life:1,good:true,damage:1}); update(.001)");
+assert.equal(run("enemies[0].hp"), 2);
+run("shots.length=0; shots.push({x:enemies[0].x+10,y:GROUND-48,vx:0,vy:0,life:1,good:true,damage:1,spit:true}); update(.001)");
+assert.equal(run("enemies[0].hp"), 1);
+// Recibir daño cancela la animación de lanzamiento.
+run("reset(); shoot(false); player.inv=0; hit(); update(.016)");
+assert.equal(run("player.throwT <= 0"), true);
+assert.equal(run("player.anim"), "hurt");
 // El dibujo con fallback no lanza.
 run("for (let i = 0; i < 30; i++) { update(.016); draw(); }");
 
@@ -89,7 +98,7 @@ run("for (let i = 0; i < 30; i++) { update(.016); draw(); }");
 const calls = [];
 const SP = {
   draw(ctx, kind, anim, t, x, y, o) {
-    calls.push({ kind, anim, t, x, y, rot: o.rotation, flash: o.flash, fill: o.fill });
+    calls.push({ kind, anim, t, x, y, w: o.w, h: o.h, facing: o.facing, rot: o.rotation, flash: o.flash, fill: o.fill });
     return true;
   },
   size: (k) => ({ w: 16, h: 16, anchor: "center" }),
@@ -108,6 +117,10 @@ assert.ok(bgCalls.includes("bg") && bgCalls.includes("ground") && bgCalls.includ
 assert.ok(calls.some((c) => c.kind === "hero" && c.anim === "idle" && c.fill === 1));
 assert.ok(calls.some((c) => c.kind === "llama"));
 assert.ok(calls.some((c) => c.kind === "stone_pile"));
+// El arte recibe el hitbox real (perro 44x26 en el suelo, capitán 72x96) y una orientación válida.
+assert.ok(calls.some((c) => c.kind === "perro" && c.w === 44 && c.h === 26 && c.y + c.h === 440));
+assert.ok(calls.some((c) => c.kind === "capitan" && c.w === 72 && c.h === 96));
+assert.ok(calls.every((c) => c.facing === 1 || c.facing === -1));
 // Lanzar: animación 'throw' con temporizador desde el inicio de la acción.
 run("player.cool=0; shoot(false); update(.016)");
 assert.equal(run("player.anim"), "throw");
