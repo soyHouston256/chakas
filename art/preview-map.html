@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CHANKAS · mapa</title>
+    <style>
+      body { margin: 0; background: #120d0b; color: #f6e9cc; font: 14px Georgia, serif; }
+      .wrap { max-width: 960px; margin: 0 auto; padding: 12px; }
+      canvas { width: 100%; height: auto; image-rendering: pixelated; display: block; background: #000; }
+      .ui { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 10px 0; }
+      button { font: inherit; padding: 4px 10px; }
+      #info { color: #c99a3c; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <canvas id="map" width="960" height="540"></canvas>
+      <div class="ui">
+        <label>Progreso <input id="prog" type="range" min="0" max="4" step="1" value="0" /> <b id="pv">0</b></label>
+        <button id="walk">Animar héroe →</button>
+        <span id="info">Clic / pasa el ratón sobre las etapas · ← → seleccionar</span>
+        <span id="perf"></span>
+      </div>
+    </div>
+    <script src="sprites.js"></script>
+    <script src="peru-data.js"></script>
+    <script src="map.js"></script>
+    <script>
+      const M = window.ChankasMap, cv = document.getElementById('map'), ctx = cv.getContext('2d');
+      const st = { progress: 0, selected: 0, heroT: 0, walking: null, hover: -1 };
+      const prog = document.getElementById('prog');
+      prog.oninput = () => {
+        st.progress = +prog.value; st.heroT = Math.min(st.progress, 4); st.selected = Math.min(st.progress, 4);
+        document.getElementById('pv').textContent = prog.value;
+      };
+      document.getElementById('walk').onclick = () => {
+        const from = Math.round(st.heroT) % 4;
+        st.heroT = from; st.walking = { from, to: from + 1, t: 0 };
+        st.progress = Math.max(st.progress, from + 1); prog.value = st.progress;
+        document.getElementById('pv').textContent = st.progress;
+      };
+      function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; }
+      cv.onmousemove = (e) => { const i = M.stageAt(...pos(e)); st.hover = i; cv.style.cursor = i >= 0 ? 'pointer' : 'default'; if (i >= 0) st.selected = i; };
+      cv.onclick = (e) => { const i = M.stageAt(...pos(e)); if (i >= 0) st.selected = i; };
+      addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') st.selected = Math.max(0, st.selected - 1);
+        if (e.key === 'ArrowRight') st.selected = Math.min(4, st.selected + 1);
+      });
+      let last = performance.now(), acc = 0, n = 0;
+      function frame(now) {
+        const dt = Math.min(0.05, (now - last) / 1000); last = now;
+        if (st.walking) {
+          st.walking.t += dt / 2.2;
+          if (st.walking.t >= 1) { st.heroT = st.walking.to; st.walking = null; }
+          else st.heroT = st.walking.from + st.walking.t;
+        }
+        const t0 = performance.now();
+        M.draw(ctx, now / 1000, { width: cv.width, height: cv.height, progress: st.progress, selected: st.selected, heroT: st.heroT });
+        acc += performance.now() - t0; n++;
+        if (n === 60) { document.getElementById('perf').textContent = 'draw ' + (acc / n).toFixed(2) + ' ms'; window.__mapDrawMs = acc / n; acc = 0; n = 0; }
+        requestAnimationFrame(frame);
+      }
+      window.__st = st;
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
