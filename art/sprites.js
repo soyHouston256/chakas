@@ -37,14 +37,15 @@
     w: '#f4ead3', W: '#cdbd99', v: '#86735a', // lana / crema
     x: '#ffffff',
     b: '#7e4b29', B: '#4a2a17', // cuero
-    m: '#d4dbe0', M: '#8d98a3', N: '#4f5964', // acero
-    d: '#3b3644', D: '#221f29', // paño negro
+    m: '#e4ddd0', M: '#aab4bb', N: '#596779', // acero
+    d: '#535262', D: '#292b3c', // paño negro
     e: '#7d2b2d', E: '#4e1a1f', // rojo oscuro
     u: '#94612f', U: '#5c3a1b', // madera
     y: '#b48652', Y: '#7a5531', z: '#3c2818', // atigrado
     f: '#ffc93c', F: '#ff7b1c', i: '#fff5b8', I: '#d13c16', // fuego
     p: '#c3eaa8', P: '#79b46b', // saliva
     a: '#bab5a3', A: '#7b7669', c: '#e5e1ce', // piedra
+    H: '#ffd5a1', V: '#ead8b5', Z: '#d9ad70', // luz cálida: piel, lana, alano
     j: '#e3579b', J: '#7b3f9f' // pompones
   };
   var RGBA_SOFT = { l: [255, 244, 214, 150], L: [150, 142, 136, 140], Q: [255, 255, 255, 120] };
@@ -131,6 +132,29 @@
       if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) add.push(y * w + x);
     }
     for (var i = 0; i < add.length; i++) d[add[i]] = c;
+    return this;
+  };
+  // Sel-out y luz cenital izquierda, únicamente durante el prerenderizado.
+  GP.finish = function () {
+    var src = this.d.slice(), w = this.w, h = this.h;
+    var lit = { s: 'h', h: 'H', C: 'X', r: 'q', o: 'g', b: 'u',
+      w: 'V', W: 'w', y: 'Z', M: 'm', m: 'x', d: 'N', a: 'c' };
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var c = src[y * w + x];
+      if (!lit[c]) continue;
+      var top = y === 0 || src[(y - 1) * w + x] === '.';
+      var left = x === 0 || src[y * w + x - 1] === '.';
+      if (top || left && ((x + y) & 1) === 0) this.d[y * w + x] = lit[c];
+    }
+    this.outline();
+    // El borde iluminado usa un valor intermedio; la sombra conserva el contorno.
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
+      var at = y * w + x;
+      if (this.d[at] !== 'k' || src[at] !== '.') continue;
+      c = src[at + w];
+      if (src[at - w] === '.' && (c === 'm' || c === 'M' || c === 'w' || c === 'V'))
+        this.d[at] = c === 'm' || c === 'M' ? 'M' : 'v';
+    }
     return this;
   };
   GP.bbox = function () {
@@ -269,9 +293,9 @@
     '..nnnnn.',
     '.nnnnnnn',
     'rorrorro', // llauto trenzado
-    'nnnsshss',
+    'nnnhhsss',
     'nnggssks', // orejera de oro + ojo
-    'nnGGsssh',
+    'nnGGssSs',
     '.nnssSs.',
     '..nSSs..'
   ];
@@ -285,11 +309,12 @@
       for (var i = 0; i < W; i++) {
         var c;
         if (r === 0 && (i < 1 || i > 8)) continue;
-        if (r <= 3) c = i === 0 ? 'q' : (i === W - 1 ? 'R' : 'r');
+        if (r <= 3) c = i < 2 ? 'q' : (i >= W - 2 ? 'R' : 'r');
         else if (r === 4 || r === 11) c = i === W - 1 ? 'G' : 'g';
         else if (r <= 10) {
           var col = TOC[Math.floor((r - 5) / 2)][Math.floor(i / 2)];
           c = (r - 5) % 2 === 0 ? col : DARK[col];
+          if (i % 2 === 0 && (r === 6 || r === 10)) c = 'w';
         } else c = i === W - 1 ? 'R' : 'r';
         g.set(sx + i, y + r, c);
       }
@@ -352,9 +377,10 @@
     g.set(hx, hy + 1, 'g'); g.set(hx - 1, hy, 'g'); g.set(hx - 1 + fs, hy - 1, 'g');
     g.set(hx - 2 + fs, hy - 2, 'r'); g.set(hx - 2 + fs * 2, hy - 3, 'r');
     var a = limb(g, shFX, shY, p.hf[0], p.hf[1], 5, 4, -1, 's', 's', 2);
+    g.line(shFX, shY, a[0], a[1], 'h', 1);
     g.set(a[2], a[3] - 1, 'g'); // brazalete
     if (p.sling) p.sling(g, Math.round(a[2]), Math.round(a[3]));
-    return g.outline();
+    return g.finish();
   }
   var RUNC = [[5, 38], [2, 38], [-1, 38], [-4, 37], [-6, 35], [-4, 33], [0, 33], [4, 35]];
   var RUNBY = [0, 1, 0, -1, 0, 1, 0, -1];
@@ -439,8 +465,8 @@
     '.NNNNNNNNNN.'
   ];
   var FACE_SP = [ // rostro casi oculto por la sombra del ala
-    'nKKKKK',
-    'nCCCkC',
+    'nXCCKK',
+    'nXCCkC',
     'nNCCCC',
     'nnCCCX',
     'nnnnnC',
@@ -450,8 +476,9 @@
     for (var r = 0; r < 9; r++) {
       var sx = x + Math.round(ln * (8 - r) / 8);
       for (var i = 0; i < 8; i++) {
-        var c = (i >= 4 && i <= 6) ? 'e' : 'E';
-        if (r === 0) c = (i >= 3 && i <= 6) ? 'w' : 'D';
+        var c = ['m', 'm', 'M', 'm', 'M', 'M', 'N', 'N'][i];
+        if (r === 2 && i === 2) c = 'x';
+        if (r === 0) c = i < 6 ? 'm' : 'N';
         if (r === 7) c = i === 5 ? 'g' : 'B';
         if (r === 8) c = i === 7 ? 'E' : 'D';
         if (i === 6 && (r === 2 || r === 4)) c = 'g';
@@ -463,7 +490,7 @@
     g.set(x + ln + 2, y + 3, 'u'); g.set(x + 4, y + 6, 'u');
   }
   function torsoPiq(g, x, y, ln) {
-    var cols = ['N', 'N', 'M', 'M', 'm', 'm', 'M', 'N'];
+    var cols = ['m', 'm', 'M', 'm', 'M', 'M', 'N', 'N'];
     for (var r = 0; r < 9; r++) {
       var sx = x + Math.round(ln * (8 - r) / 8);
       for (var i = 0; i < 8; i++) {
@@ -507,7 +534,7 @@
     g.dot(af[2], af[3], 'C', 2);
     if (p.after) p.after(g);
     g.oy = 0;
-    return g.outline();
+    return g.finish();
   }
   var WALKC = [[3, 38], [1, 38], [-1, 38], [-3, 38], [-1, 36], [2, 36]];
   var WALKBY = [0, 1, 0, 0, 1, 0];
@@ -659,8 +686,8 @@
   ];
   var FACE_CAP = [
     'nnKKKKKKKK',
-    'nnCCCCCCCC',
-    'nnCCCCkCCC',
+    'nnXXCCCCCC',
+    'nnXCCCkCCC',
     'nnCCCCCCCX',
     'nnNCCCCCCX',
     'nnnCCCCCXX',
@@ -677,7 +704,8 @@
         var c;
         if (r <= 1) { if (i < 2 || i > 11) continue; c = r === 0 ? 'm' : 'M'; }
         else if (r <= 12) {
-          c = i <= 2 ? 'N' : (i <= 6 ? 'M' : (i <= 9 ? 'm' : (i === 10 ? 'M' : 'N')));
+          c = i <= 2 ? 'm' : (i <= 6 ? 'M' : (i <= 9 ? 'm' : (i === 10 ? 'M' : 'N')));
+          if (r === 3 && i <= 2) c = 'x';
           if (r === 12) c = 'N';
           if (r === 4 && i === 8) c = 'x';
         } else {
@@ -702,7 +730,7 @@
       var t = r / 25;
       var left = Math.round(x + 1 + ln * (1 - t) - t * (10 + flare) + Math.sin(r * 0.5 + i * 1.6) * (0.6 + t * 1.6));
       var right = x + 6 + Math.round(ln * (1 - t));
-      for (var xx = left; xx <= right; xx++) g.set(xx, y + r - (flare > 6 ? Math.round(t * flare * 0.6) : 0), xx === left ? 'R' : (xx < left + 3 ? 'D' : 'd'));
+      for (var xx = left; xx <= right; xx++) g.set(xx, y + r - (flare > 6 ? Math.round(t * flare * 0.6) : 0), xx === left ? 'e' : ((xx - left + Math.round(t * 3)) % 5 === 0 ? 'N' : (xx < left + 3 ? 'D' : 'd')));
     }
   }
   function plume(g, hx, hy, s) {
@@ -725,13 +753,17 @@
       g.set(hx - ca * 2, hy - sa * 2, 'g'); // pomo
     };
   }
-  function pistol(hx, hy, deg, fire) {
+  function matchlock(hx, hy, deg, fire) {
     var ca = Math.cos(deg * DEG), sa = Math.sin(deg * DEG);
     return function (g) {
       g.line(hx - ca * 1 + sa * 1, hy - sa * 1 - ca * 1 + 2, hx - ca * 3, hy + 3, 'u', 2);
-      g.line(hx, hy, hx + ca * 9, hy + sa * 9, 'N', 2);
+      // Arcabuz corto de mecha: culata, cañón largo y serpentín visible.
+      g.line(hx - ca * 3, hy - sa * 3, hx + ca * 5, hy + sa * 5, 'u', 2);
+      g.line(hx + ca * 3, hy + sa * 3, hx + ca * 16, hy + sa * 16, 'N', 1);
+      g.line(hx + ca * 6, hy + sa * 6 - 1, hx + ca * 15, hy + sa * 15 - 1, 'M', 1);
+      g.set(hx + ca * 4, hy + sa * 4 - 2, 'F');
       g.set(hx + 1, hy - 1, 'g');
-      var mx = hx + ca * 10, my = hy + sa * 10;
+      var mx = hx + ca * 17, my = hy + sa * 17;
       if (fire === 1) flashAt(g, mx + 1, my, 5);
       if (fire === 2) puff(g, mx + 4, my - 3, 3.5);
     };
@@ -758,13 +790,13 @@
     if (p.eye) g.set(hx + 6, hy + 2, p.eye);
     plume(g, hx - 1, hy - 8, p.fs || 0);
     g.blit(HELM_CAP, hx - 5, hy - 8);
-    g.rect(hx + 1, hy + 9, 9, 1, 'w'); // gorguera
+    g.rect(hx + 1, hy + 9, 9, 1, 'w'); // cuello de camisa
     if (p.item) p.item(g);
     var af = limb(g, shF, shY, p.hf[0], p.hf[1], 7, 7, -1, 'd', 'd', 3);
     g.ellipse(shF, shY - 1, 3.5, 2.6, function (x, y) { return y < shY - 1 ? 'm' : 'M'; }); // hombrera
     g.dot(af[2], af[3], 'M', 3);
     if (p.after) p.after(g, af);
-    return g.outline();
+    return g.finish();
   }
   var CWALK = [[5, 69], [2, 69], [-2, 69], [-5, 69], [-2, 65], [3, 65]];
   var CRUN = [[9, 68], [1, 69], [-8, 67], [-2, 62]];
@@ -788,7 +820,7 @@
         return { bx: S.bx, lean: S.lean, fs: S.fs, fb: wide ? [27, 69] : [30, 69], ff: wide ? [47, 69] : [41, 69], hb: [27, 49], hf: S.hf, item: null, after: function (g, af) { sword(af[2], af[3], S.d, S.smear)(g); } };
       case 'shoot':
         var H = [[44, 49, 70], [50, 41, 0], [50, 41, 0], [49, 37, -25]][i];
-        return { fb: [30, 69], ff: [41, 69], hb: [30, 53], hf: [H[0], H[1]], hdx: i ? 1 : 0, backItem: sword(30, 53, 100), after: function (g, af) { pistol(af[2], af[3], H[2], i === 2 ? 1 : (i === 3 ? 2 : 0))(g); } };
+        return { fb: [30, 69], ff: [41, 69], hb: [30, 53], hf: [H[0], H[1]], hdx: i ? 1 : 0, backItem: sword(30, 53, 100), after: function (g, af) { matchlock(af[2], af[3], H[2], i === 2 ? 1 : (i === 3 ? 2 : 0))(g); } };
       case 'charge':
         var f1 = CRUN[i], f2 = CRUN[(i + 2) % 4];
         return { bx: 2, lean: 4, by: [0, 1, 0, -1][i], flare: 8, fs: 3, ff: [39 + f1[0], f1[1]], fb: [35 + f2[0], f2[1]], hb: [26, 46 + i % 2], hf: [52, 46], after: function (g, af) { sword(af[2], af[3], -4)(g); } };
@@ -811,7 +843,7 @@
   KINDS.capitan = {
     box: { w: 72, h: 96 }, anchor: 'feet', scale: 2, fw: 88, fh: 72, ax: 36, ay: 72, def: 'idle',
     anims: {
-      idle: A(4, 4, true, capBuild('idle')),
+      idle: A(8, 8, true, function (i) { var p = capPose('idle', Math.floor(i / 2)); p.fs = [0, 1, 2, 1, 0, -1, -2, -1][i]; return capFrame(p, i * 0.5); }),
       walk: A(6, 7, true, capBuild('walk')),
       slash: A(5, 10, false, capBuild('slash')),
       shoot: A(4, 8, false, capBuild('shoot')),
@@ -865,7 +897,7 @@
       return function (x, y) {
         if (y > cy + 2) return 'Y';
         if ((x + Math.floor(y * 0.6)) % 4 === 0) return 'z';
-        return y < cy - 3 ? 'y' : ((x + y) % 7 === 0 ? 'Y' : 'y');
+        return y < cy - 3 ? 'Z' : ((x + y) % 7 === 0 ? 'Y' : 'y');
       };
     }
     g.ellipse(23 + bx, Y(23, 17), 10, 4.6, coat(Y(23, 17)));
@@ -884,7 +916,7 @@
     var r3 = limb(g, sh[0] + 1, sh[1], p.fn[0], p.fn[1], 6, 6, -1, 'y', 'y', 2); g.dot(r3[2], r3[3], 'D', 2);
     var r4 = limb(g, hp[0] + 1, hp[1], p.rn[0], p.rn[1], 6, 6, -1, 'y', 'Y', 2); g.dot(r4[2], r4[3], 'D', 2);
     if (p.after) p.after(g);
-    return g.outline();
+    return g.finish();
   }
   var GALLOP = [
     { by: 0, fn: [40, 26], ff: [42, 25], rn: [6, 26], rf: [8, 27], tail: 1 },
@@ -910,8 +942,21 @@
   function dogBuild(anim) {
     return function (i) {
       if (anim === 'dead') {
-        var g0 = dogFrame(dogPose('hit', 0)).fit(52, 52);
-        return g0.rotCCW().rotCCW().settle(31, 24).fit(52, 32);
+        // Alano de lado: lomo horizontal, cabeza apoyada y patas relajadas.
+        var g = new Grid(52, 32);
+        g.line(11, 23, 5, 25, 'Y', 2); g.line(5, 25, 3, 28, 'y', 1);
+        g.line(17, 25, 13, 30, 'Y', 2); g.line(29, 25, 34, 30, 'Y', 2);
+        g.ellipse(23, 25, 13, 4, function (x, y) {
+          if (y > 27) return 'Y';
+          if ((x + Math.floor(y / 2)) % 5 === 0) return 'z';
+          return y < 24 ? 'Z' : 'y';
+        });
+        g.ellipse(35, 26, 5, 3, 'y');
+        g.blit(HEAD_DOG, 35, 20); g.line(39, 24, 41, 24, 'z');
+        g.line(34, 23, 34, 28, 'd', 2); g.set(33, 24, 'm');
+        g.line(18, 27, 21, 29, 'Z', 2); g.line(21, 29, 17, 30, 'y', 2);
+        g.line(30, 27, 32, 29, 'Z', 2); g.line(32, 29, 37, 30, 'y', 2);
+        return g.finish();
       }
       return dogFrame(dogPose(anim, i));
     };
@@ -956,8 +1001,9 @@
     // cuerpo de lana
     var cy = 31 + by;
     g.ellipse(18, cy, 11.5, 6.6, function (x, y) {
-      if (y > cy + 3) return 'W';
-      return (x * 3 + y * 5) % 7 === 0 ? 'W' : 'w';
+      if (y > cy + 4) return 'v';
+      if (y > cy + 2) return 'W';
+      return y < cy - 3 ? 'V' : ((x * 3 + y * 5) % 11 === 0 ? 'W' : 'w');
     });
     // cuello hacia la cabeza
     var top = 12 + by + hdy, nx = 29 + hdx;
@@ -969,7 +1015,8 @@
     for (var r = 0; r < 8; r++) for (var x = 10; x <= 24; x++) {
       var c = 'r';
       if (r === 1 || r === 6) c = 'g';
-      else if (r === 3 || r === 4) c = (x + r) % 3 === 0 ? 'o' : 't';
+      else if (r === 3 || r === 4) c = (x + r) % 4 < 2 ? 't' : 'T';
+      if (r === 2 || r === 5) c = x % 4 === 0 ? 'w' : (x % 4 === 2 ? 'o' : 'R');
       if (x === 10 || x === 24) c = 'R';
       g.set(x, 23 + by + r, c);
     }
@@ -978,7 +1025,7 @@
     var hx = 27 + hdx, hy = 5 + by + hdy;
     var ear2 = p.ear ? -1 : 0;
     g.line(hx + 1, hy, hx + 1 + ear2, hy - 4, 'w', 1); g.set(hx + 2 + ear2, hy - 4, 'w');
-    g.line(hx + 3, hy, hx + 4, hy - 4, 'W', 1); g.set(hx + 5, hy - 4, 'W');
+    g.line(hx + 3, hy, hx + 4 + (i % 3 === 0 ? 1 : 0), hy - 4, 'W', 1); g.set(hx + 5, hy - 4, 'W');
     g.blit(HEAD_LLAMA, hx, hy);
     g.rect(hx - 1, hy - 2, 2, 2, 'j'); g.set(hx - 1, hy, 'J'); g.set(hx - 2, hy + 1, 'j');
     g.rect(hx + 5, hy - 2, 2, 2, 't'); g.set(hx + 6, hy, 'o');
@@ -988,7 +1035,7 @@
     lleg([sh[0] + 1, sh[1]], p.fn, 'w', 'w', 'v');
     lleg([hp[0] + 1, hp[1]], p.rn, 'w', 'W', 'v');
     if (p.after) p.after(g, hx, hy);
-    return g.outline();
+    return g.finish();
   }
   function llamaPose(anim, i) {
     switch (anim) {
@@ -1020,7 +1067,7 @@
   KINDS.llama = {
     box: { w: 40, h: 70 }, anchor: 'feet', scale: 2, fw: 48, fh: 52, ax: 20, ay: 52, def: 'idle',
     anims: {
-      idle: A(4, 3, true, llamaBuild('idle')),
+      idle: A(8, 6, true, function (i) { var p = llamaPose('idle', Math.floor(i / 2)); p.ear = i === 3 || i === 6; return llamaFrame(p, i); }),
       walk: A(4, 6, true, llamaBuild('walk')),
       run: A(4, 10, true, llamaBuild('run')),
       spit: A(4, 8, false, llamaBuild('spit'))

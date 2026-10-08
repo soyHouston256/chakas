@@ -121,12 +121,12 @@
   // ---------------------------------------------------------------- paleta andina
   var P = (function () {
     var src = {
-      sky: ['#163262', '#1b3a6e', '#22447b', '#2a4f88', '#335c95', '#3f69a0', '#5079ab', '#668ab3', '#829cba', '#a3aeb8', '#c4bba5', '#dfc797', '#ecd09a'],
+      sky: ['#283653', '#343f60', '#41496b', '#535574', '#68617c', '#806c81', '#9b7c85', '#b68d88', '#ce9e8c', '#deb294', '#e8c39f', '#eed0a8', '#f2dab5'],
       sunCore: '#fff7de', sunRim: '#f9e2a2', sunGlow: '#f3d79c',
       cloudLit: '#f6e7c8', cloudMid: '#dccdb6', cloudShade: '#a9a3b2', cloudWarm: '#f2cf9a',
       condor: '#1d1a1c', condorWhite: '#d9d4cb', condorHead: '#b9765f',
       apuBack: '#9badc9', rockLit: '#8b93ac', rockShade: '#5c6a8d', snowLit: '#f3ece0', snowShade: '#a8b8d3', apuHaze: '#a9bbd2',
-      hillHaze: '#a7b0a1',
+      hillHaze: '#a1adb9',
       fields: ['#7c8a45', '#8d8a48', '#a08c4c', '#6f7e40', '#97904f', '#b39a55'],
       andenWall: '#8f8670', andenJoint: '#5f584a', andenShadow: '#596334',
       valley: ['#7f8c4c', '#8f9152', '#a59656', '#77834a', '#b1a060'],
@@ -135,7 +135,7 @@
       ichu: ['#b39a4c', '#a68c42', '#8a8442', '#97874a', '#bba356'], ichuRim: '#d4bd6a', ichuRim2: '#c4aa5c', ichuDeep: '#7a6a36',
       tuft: '#d8c070', tuftSh: '#a88f45',
       path: '#cdb78e', pathEdge: '#957f5c',
-      stone: ['#a39d8f', '#968f82', '#b0a896', '#9b9384', '#aba08a'], stoneLight: '#dad0b8', stoneDark: '#6a6357', stoneJoint: '#463f37', lichen: '#b4ad78', stoneDeep: '#5a544b',
+      stone: ['#939598', '#858b91', '#a5a5a0', '#919292', '#a2998b'], stoneLight: '#e2cba6', stoneDark: '#626772', stoneJoint: '#414750', lichen: '#b4ad78', stoneDeep: '#5a544b',
       wallShade: '#6d7387', hazeMid: '#8f97a3', hazeFar: '#a9b4bf',
       platOutline: '#2a211b', platWarm: '#c79a5c',
       tTrunk: '#9a5638', tTrunkSh: '#6a3826', qLeaf: ['#6f8248', '#4e6233', '#34442a'],
@@ -155,7 +155,7 @@
   // ---------------------------------------------------------------- piedra poligonal inca
   /*
    * Rellena un muro de piedras poligonales encajadas: hiladas irregulares con bordes
-   * inclinados, juntas finas, esquinas biseladas (almohadillado) y luz de tarde (derecha).
+   * inclinados, juntas finas, esquinas biseladas (almohadillado) y luz de tarde (arriba a la izquierda).
    * topFn(x) -> y superior (global), botY -> y inferior. shadeFn(x,y,c) -> color final.
    */
   function renderStones(b, x0, x1, topFn, botY, st, seed, shadeFn) {
@@ -210,11 +210,14 @@
             col = st.tones[Math.floor(sid * st.tones.length)];
             if (dy === 1) col = mix(col, st.light, 0.45);
             else if (dyb === 0) col = mix(col, st.dark, 0.45);
-            else if (dl === 1) col = mix(col, st.light, 0.18);
+            else if (dl === 1) col = mix(col, st.light, 0.38);
             else if (dr === 0) col = mix(col, st.dark, 0.3);
             var hs = hash2(x0 + i, y, seed + 3);
-            if (hs < 0.05) col = mix(col, st.dark, 0.3);
-            else if (hs > 0.965) col = mix(col, st.lichen, 0.5);
+            if (hs < 0.045) col = mix(col, st.dark, 0.25);
+            else if (hs > 0.977) col = mix(col, st.lichen, 0.35);
+            else if (hs > 0.92) col = mix(col, st.light, 0.24);
+            if (dy > 1 && dyb > 0 && dl > 1 && dr > 0)
+              col = mix(col, st.dark, bayer(x0 + i, y) < t * 0.35 ? 0.12 : 0);
           }
           if (y === tops[i] && col !== st.joint) col = mix(col, st.light, 0.35);
           if (shadeFn) col = shadeFn(x0 + i, y, col);
@@ -231,17 +234,18 @@
   // ---------------------------------------------------------------- 1. cielo
   function buildSky(w) {
     var b = new Buf(w, LOW_H), stops = P.sky, n = stops.length;
-    var sunX = Math.round(w * 0.74), sunY = 50;
+    var sunX = Math.round(w * 0.24), sunY = 43;
     for (var y = 0; y < LOW_H; y++) {
       var t = Math.min(1, Math.pow(y / 118, 1.1)), f = t * (n - 1), i0 = Math.floor(f), fr = f - i0;
       for (var x = 0; x < w; x++) {
         var c = stops[fr > bayer(x, y) ? Math.min(n - 1, i0 + 1) : i0];
         var dx = x - sunX, dy = y - sunY, d = Math.sqrt(dx * dx + dy * dy);
-        if (d <= 5.5) c = P.sunCore;
-        else if (d <= 7) c = P.sunRim;
-        else if (d < 32) {
-          var g = 1 - d / 32; g *= g;
-          var lv = Math.floor(g * 3 + bayer(x, y));
+        // Disco uniforme: ningún detalle de textura atraviesa el núcleo.
+        if (d <= 6) c = P.sunCore;
+        else if (d <= 7.5) c = P.sunRim;
+        else if (d < 38) {
+          var g = 1 - (d - 7.5) / 30.5; g *= g;
+          var lv = Math.floor(g * 4 + bayer(x, y));
           if (lv > 0) c = mix(c, P.sunGlow, lv * 0.18);
         }
         b.set(x, y, c);
@@ -321,7 +325,7 @@
       for (y = top; y < LOW_H; y++) {
         var alt = base - y;
         var ridge = bp.cx + Math.sin(y * 0.45 + bp.cx) * 1.6 + (top - y) * 0.05;
-        var lit = x > ridge;
+        var lit = x < ridge;
         var snow = alt > snowline || (couloir && alt > snowline - 4 - noise1(x * 0.9, 43) * 12) ||
           (alt > snowline - 3 && bayer(x, y) < (alt - snowline + 3) / 3);
         var c = snow ? (lit ? P.snowLit : P.snowShade) : (lit ? P.rockLit : P.rockShade);
@@ -330,6 +334,7 @@
         b.set(x, y, c);
       }
     }
+    b.haze(P.apuHaze, 0.12, 0.12);
     return b.toCanvas();
   }
 
@@ -411,7 +416,7 @@
       var e = burning[s];
       smokes.push({ x: e.x, y: e.y, seed: hash(s, 91), speed: 0.11 + hash(s, 92) * 0.06, height: 30 + hash(s, 93) * 22, drift: -10 - hash(s, 94) * 10 });
     }
-    b.haze(P.hazeFar, 0.16, 0.25);
+    b.haze(P.hazeFar, 0.24, 0.3);
     return { canvas: b.toCanvas(), smokes: smokes, fires: burning };
   }
   function drawHouse(b, x, by, bw, wh, rh, burn, haze) {
@@ -564,7 +569,7 @@
   function drawRectTower(b, cx, by, tw, th, seed) {
     var x0 = cx - (tw >> 1);
     renderStones(b, x0, x0 + tw, function (xx) { return by - th + Math.round(hash(xx, seed) * 2); }, by, stoneStyle(3, 5, 2, 3, 1, 0), seed,
-      function (xx, yy, c) { return xx < cx ? mix(c, P.wallShade, 0.3) : c; });
+      function (xx, yy, c) { return xx > cx ? mix(c, P.wallShade, 0.3) : c; });
     for (var k = 0; k < 2; k++) { var wx = x0 + 3 + k * (tw - 7); b.set(wx, by - th + 5, P.door); b.set(wx + 1, by - th + 5, P.door); b.set(wx, by - th + 6, P.door); b.set(wx + 1, by - th + 6, P.door); b.set(wx - 0, by - th + 4, P.door); }
     // techo de ichu quemado
     for (var j = 0; j < 4; j++) for (var i = -(tw >> 1) - 1 + j; i <= (tw >> 1) + 1 - j; i++)
@@ -577,7 +582,7 @@
         if (ragged && hash(dx + 40, 611 + y) < 0.5) continue;
         var n = dx / r, course = Math.floor((by - y) / 2), off = (course & 1) * 2;
         var joint = (by - y) % 2 === 0 || Math.round(n * 6 + off) % 4 === 0 && Math.abs(n) < 0.9;
-        var lum = clamp(0.55 + 0.5 * n - n * n * 0.3, 0, 1);
+        var lum = clamp(0.55 - 0.5 * n - n * n * 0.3, 0, 1);
         var c = mix(P.stoneDeep, mix(P.stone[2], P.stoneLight, 0.4), lum);
         if (joint) c = mix(c, P.stoneJoint, 0.55);
         if (Math.abs(n) > 0.92) c = mix(c, P.stoneJoint, 0.4);
@@ -675,12 +680,13 @@
   // ---------------------------------------------------------------- caché
   var cache = null, groundCache = {}, platCache = {}, lastScale = 3;
   function prepare(opts) {
-    opts = opts || {};
+    opts = opts || EMPTY_OPTS;
     var W = opts.width || 960, H = opts.height || 540, L = opts.levelLength || 4200;
     var key = W + 'x' + H + 'x' + L;
     if (cache && cache.key === key) return cache;
     var S = H / LOW_H, lw = Math.ceil(W / S), range = Math.max(0, L - W);
     function layerW(f) { return Math.ceil((W + f * range) / S) + 4; }
+    prepareAnimated();
     var mf = buildMidFar(layerW(PARALLAX.midfar)), mid = buildMid(layerW(PARALLAX.mid));
     cache = {
       key: key, W: W, H: H, L: L, S: S, lw: lw, range: range,
@@ -710,13 +716,12 @@
       var dx = Math.round(a * a * em.drift + Math.sin(t * 0.8 + i * 1.7 + em.seed * 6) * 1.5 * a - size / 2);
       var dy = Math.round(-a * em.height - size / 2);
       ctx.globalAlpha = (1 - a) * 0.7;
-      ctx.fillStyle = css(P.smoke[Math.min(3, Math.floor(a * 4))]);
-      ctx.fillRect(sx + dx * S, sy + dy * S, size * S, size * S);
-      if (size > 1) ctx.fillRect(sx + (dx + 1) * S, sy + (dy - 1) * S, (size - 1) * S, S);
+      var puff = animated.smoke[Math.min(3, Math.floor(a * 4))][size - 2];
+      ctx.drawImage(puff, sx + dx * S, sy + (dy - 1) * S, size * S, (size + 1) * S);
     }
     ctx.globalAlpha = 1;
   }
-  function drawBanner(ctx, sx, sy, S, t, k) {
+  function rasterBanner(ctx, sx, sy, S, t, k) {
     // Cruz de Borgoña: aspa roja irregular sobre blanco (estandarte de los Austrias)
     for (var c = 0; c < 8; c++) {
       var wave = Math.round(Math.sin(t * 4 + c * 0.8 + k) * 0.8 * (c / 7));
@@ -730,18 +735,71 @@
     }
   }
 
+  var animated = null;
+  function prepareAnimated() {
+    if (animated) return animated;
+    var a = { banners: [], foreground: [], smoke: [], fire: [] };
+    for (var phase = 0; phase < 12; phase++) {
+      var banner = makeCanvas(10, 8), bc = banner.getContext('2d');
+      if (bc) rasterBanner(bc, 0, 1, 1, phase / 12 * Math.PI * 2 / 4, 0);
+      a.banners.push(banner);
+      var fg = makeCanvas(1408, LOW_H), fc = fg.getContext('2d');
+      if (fc) rasterForeground(fc, 0, phase / 12 * Math.PI * 2 / 1.6, { width: 1408, height: LOW_H });
+      var strip = makeCanvas(1408, 14), stripCtx = strip.getContext('2d');
+      if (stripCtx) stripCtx.drawImage(fg, 0, LOW_H - 14, 1408, 14, 0, 0, 1408, 14);
+      a.foreground.push(strip);
+    }
+    for (var tone = 0; tone < 4; tone++) {
+      var row = [];
+      for (var size = 2; size <= 5; size++) {
+        var puff = makeCanvas(size, size + 1), pc = puff.getContext('2d');
+        if (pc) { pc.fillStyle = css(P.smoke[tone]); pc.fillRect(0, 1, size, size); pc.fillRect(1, 0, size - 1, 1); }
+        row.push(puff);
+      }
+      a.smoke.push(row);
+    }
+    for (var f = 0; f < 2; f++) {
+      var fire = makeCanvas(1, 1), fireCtx = fire.getContext('2d');
+      if (fireCtx) { fireCtx.fillStyle = css(f ? P.fire2 : P.fire1); fireCtx.fillRect(0, 0, 1, 1); }
+      a.fire.push(fire);
+    }
+    animated = a;
+    return a;
+  }
+  function drawBanner(ctx, sx, sy, S, t, k) {
+    var a = prepareAnimated(), phase = Math.floor((t * 4 + k) / (Math.PI * 2) * 12);
+    var cv = a.banners[((phase % 12) + 12) % 12];
+    ctx.drawImage(cv, sx, sy - S, cv.width * S, cv.height * S);
+  }
+  function drawForeground(ctx, cameraX, timeSeconds, opts) {
+    opts = opts || EMPTY_OPTS;
+    var W = opts.width || ctx.canvas.width || 960, H = opts.height || ctx.canvas.height || 540;
+    var S = H / LOW_H, a = prepareAnimated();
+    var phase = Math.floor((timeSeconds || 0) * 1.6 / (Math.PI * 2) * 12);
+    var cv = a.foreground[((phase % 12) + 12) % 12];
+    var offset = Math.floor((cameraX || 0) * PARALLAX.fg / S);
+    var start = -(((offset % cv.width) + cv.width) % cv.width) * S;
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    for (var x = start; x < W; x += cv.width * S)
+      ctx.drawImage(cv, x, H - cv.height * S, cv.width * S, cv.height * S);
+    ctx.restore();
+  }
+  var EMPTY_OPTS = {};
+  var CLOUD_DEFS = [[0, 10, 1.1], [1, 24, 0.7], [2, 4, 0.9], [3, 34, 0.5], [4, 17, 0.8]];
+
   function drawBackground(ctx, cameraX, timeSeconds, opts) {
-    opts = opts || {};
+    opts = opts || EMPTY_OPTS;
     var cv = ctx.canvas || {};
     var W = opts.width || cv.width || 960, H = opts.height || cv.height || 540;
-    var C = prepare({ width: W, height: H, levelLength: opts.levelLength || 4200 });
+    var L = opts.levelLength || 4200;
+    var C = cache && cache.W === W && cache.H === H && cache.L === L ? cache : prepare({ width: W, height: H, levelLength: L });
     var S = C.S, t = timeSeconds || 0, cam = clamp(cameraX || 0, 0, C.range);
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     // 1. cielo
     ctx.drawImage(C.sky, 0, 0, C.sky.width, C.sky.height, 0, 0, C.sky.width * S, C.sky.height * S);
     var wrap = C.lw + 90;
-    var cloudDefs = [[0, 10, 1.1], [1, 24, 0.7], [2, 4, 0.9], [3, 34, 0.5], [4, 17, 0.8]];
+    var cloudDefs = CLOUD_DEFS;
     for (var i = 0; i < cloudDefs.length; i++) {
       var cd = cloudDefs[i], img = C.clouds[cd[0]];
       var cx = (((i * 97 - t * cd[2] - cam * PARALLAX.cloud / S) % wrap) + wrap) % wrap - 70;
@@ -767,8 +825,7 @@
       var fe = C.mfFires[i], fx = Math.round(fe.x * S - offMF);
       if (fx < -S * 2 || fx > W) continue;
       var hf = hash(f8 + i * 13, 17);
-      ctx.fillStyle = css(hf < 0.5 ? P.fire1 : P.fire2);
-      ctx.fillRect(fx + (hf < 0.3 ? -S : 0), Math.round(fe.y * S) - S, S, S);
+      ctx.drawImage(animated.fire[hf < 0.5 ? 0 : 1], fx + (hf < 0.3 ? -S : 0), Math.round(fe.y * S) - S, S, S);
     }
     for (i = 0; i < C.mfSmokes.length; i++) {
       var sm = C.mfSmokes[i], ssx = Math.round(sm.x * S - offMF);
@@ -792,21 +849,22 @@
   }
 
   // 5. primer plano: ichu meciéndose, piedras y cantutas (coordenadas de pantalla)
-  function drawForeground(ctx, cameraX, timeSeconds, opts) {
-    opts = opts || {};
+  function rasterForeground(ctx, cameraX, timeSeconds, opts) {
+    opts = opts || EMPTY_OPTS;
     var cv = ctx.canvas || {};
     var W = opts.width || cv.width || 960, H = opts.height || cv.height || 540;
     var S = H / LOW_H, t = timeSeconds || 0, off = (cameraX || 0) * PARALLAX.fg / S, sp = 11;
     var k0 = Math.floor((off - 20) / sp), k1 = Math.ceil((off + W / S + 20) / sp);
     ctx.save();
     for (var k = k0; k <= k1; k++) {
-      var h0 = hash(k, 77);
+      var id = ((k % 128) + 128) % 128;
+      var h0 = hash(id, 77);
       if (h0 > 0.5) continue;
-      var type = hash(k, 78), bx = Math.round((k * sp + hash(k, 79) * 7 - off) * S);
+      var type = hash(id, 78), bx = Math.round((k * sp + hash(id, 79) * 7 - off) * S);
       if (type < 0.66) {
-        var n = 4 + Math.floor(hash(k, 80) * 4), sway = Math.sin(t * 1.6 + k * 0.7) * 1.3 + Math.sin(t * 2.7 + k) * 0.4;
+        var n = 4 + Math.floor(hash(id, 80) * 4), sway = Math.sin(t * 1.6 + id * 0.7) * 1.3 + Math.sin(t * 3.2 + id) * 0.4;
         for (var bl = 0; bl < n; bl++) {
-          var lean = (bl - (n - 1) / 2) * 0.45, len = 5 + Math.floor(hash(k * 31 + bl, 81) * 7) - Math.abs(Math.round(lean * 2));
+          var lean = (bl - (n - 1) / 2) * 0.45, len = 5 + Math.floor(hash(id * 31 + bl, 81) * 7) - Math.abs(Math.round(lean * 2));
           ctx.fillStyle = css(P.fgIchu[bl % 3]);
           var runX = null, runY0 = 0;
           for (var s = 1; s <= len + 1; s++) {
@@ -818,14 +876,14 @@
           }
         }
       } else if (type < 0.86) {
-        var sw = 4 + Math.floor(hash(k, 82) * 4);
+        var sw = 4 + Math.floor(hash(id, 82) * 4);
         ctx.fillStyle = css(P.fgStone);
         ctx.fillRect(bx, H - 3 * S, sw * S, 3 * S);
         ctx.fillRect(bx + S, H - 4 * S, (sw - 2) * S, S);
         ctx.fillStyle = css(P.fgStoneLit);
         ctx.fillRect(bx + 2 * S, H - 4 * S, (sw - 3) * S, S);
       } else {
-        var sh = 7 + Math.floor(hash(k, 83) * 4), sv = Math.round(Math.sin(t * 1.4 + k) * 0.6);
+        var sh = 7 + Math.floor(hash(id, 83) * 4), sv = Math.round(Math.sin(t * 1.6 + id) * 0.6);
         ctx.fillStyle = css(P.fgStem);
         ctx.fillRect(bx, H - sh * S, S, sh * S);
         ctx.fillRect(bx + sv * S + S, H - (sh - 1) * S, S, S);
