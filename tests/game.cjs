@@ -344,6 +344,141 @@ calls.length = 0;
 run("draw()");
 assert.ok(calls.some((c) => c.kind === "capitan" && c.flash));
 assert.ok(calls.some((c) => c.kind === "boleadora" && c.anim === "spin"));
+// ---------------------------------------------------------------------------
+// Mapa de misiones: título → mapa → nivel, victoria → mapa con progreso, etapas
+// bloqueadas no jugables, localStorage robusto y fallback sin módulo de mapa.
+function realMap() {
+  const ctx = { console, Math, Number, JSON };
+  ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync("art/peru-data.js", "utf8"), ctx);
+  vm.runInContext(fs.readFileSync("art/map.js", "utf8"), ctx);
+  return ctx.ChankasMap;
+}
+const RM = realMap();
+assert.equal(RM.stages.length, 5);
+assert.equal(JSON.stringify(RM.stages.map((s) => s.playable)), "[true,false,false,false,false]");
+assert.equal(RM.statusOf(0, 1) + RM.statusOf(1, 1) + RM.statusOf(2, 1), "completedcurrentlocked");
+assert.equal(RM.stageAt(RM.stages[3].node[0], RM.stages[3].node[1] - 8), 3);
+assert.equal(RM.stageAt(5, 5), -1);
+for (const s of RM.stages) {
+  assert.ok(s.history.length > 20 && s.fiction.startsWith("Ficción") && /^15\d\d$/.test(s.year));
+  const p = RM.project(s.lat, s.lon);
+  assert.ok(p.x > 0 && p.x < 640 && p.y > 0 && p.y < 540, "etapa dentro del mapa: " + s.id);
+}
+function memStorage(init = {}) {
+  const m = { ...init };
+  return {
+    data: m,
+    getItem: (k) => (k in m ? m[k] : null),
+    setItem: (k, v) => (m[k] = String(v)),
+  };
+}
+let mapDraws = 0;
+const MAPSTUB = {
+  stages: RM.stages,
+  statusOf: RM.statusOf,
+  stageAt: RM.stageAt,
+  prepare: () => true,
+  draw: () => (mapDraws++, true),
+};
+let store = memStorage();
+run = makeGame({ ChankasMap: MAPSTUB, localStorage: store });
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "map");
+assert.equal(run("mapS.progress"), 0);
+assert.equal(run("mapS.selected"), 0);
+run("updateMap(.016); drawMap()");
+assert.ok(mapDraws > 0);
+// El mapa ignora P (pausa) y las teclas no se filtran al nivel.
+run("mapKey('KeyP')");
+assert.equal(run("state"), "map");
+// Etapa bloqueada: se puede seleccionar para leer, pero no jugar.
+run("mapKey('ArrowRight'); mapKey('ArrowRight'); mapKey('ArrowRight')");
+assert.equal(run("mapS.selected"), 3);
+run("mapKey('Enter')");
+assert.equal(run("state"), "map");
+assert.ok(run("mapS.msg") > 0);
+run("for (let i = 0; i < 9; i++) mapKey('ArrowRight')");
+assert.equal(run("mapS.selected"), 4);
+run("for (let i = 0; i < 9; i++) mapKey('KeyA')");
+assert.equal(run("mapS.selected"), 0);
+run("mapKey('Enter')");
+assert.equal(run("state"), "playing");
+// Victoria → progreso guardado y el héroe camina hacia la etapa 2 (Próximamente).
+run(
+  "enemies.slice(0,8).forEach(e=>e.dead=true); var Bm=enemies[8]; Bm.hp=1; shots.push({x:Bm.x,y:Bm.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
+);
+assert.equal(run("state"), "won");
+assert.equal(JSON.parse(store.data["chankas.progress.v1"]).progress, 1);
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "map");
+assert.equal(run("mapS.progress"), 1);
+assert.equal(run("mapS.selected"), 1);
+assert.equal(run("mapS.heroT"), 0);
+run("for (let i = 0; i < 60; i++) updateMap(.016)");
+assert.ok(run("mapS.heroT") > 0 && run("mapS.heroT") < 1);
+run("for (let i = 0; i < 200; i++) updateMap(.016)");
+assert.equal(run("mapS.heroT"), 1);
+assert.equal(run("mapS.walk"), null);
+run("mapKey('Enter')");
+assert.equal(run("state"), "map"); // etapa 2 en construcción
+// Toque/clic: tocar otra etapa la selecciona; tocar la elegida la juega (si es jugable).
+run("mapPointer(" + RM.stages[0].node + ")");
+assert.equal(run("mapS.selected"), 0);
+assert.equal(run("state"), "map");
+run("mapPointer(" + RM.stages[0].node + ")");
+assert.equal(run("state"), "playing");
+// Al volver del título, el progreso persiste (nueva partida con el mismo almacenamiento).
+run = makeGame({ ChankasMap: MAPSTUB, localStorage: store });
+run("document.querySelector('#start').onclick()");
+assert.equal(run("mapS.progress"), 1);
+assert.equal(run("mapS.heroT"), 1);
+// localStorage corrupto, fuera de rango o que lanza excepciones: progreso 0..5 sin romper.
+for (const bad of ["basura", '{"progress":99}', '{"progress":-4}', '{"progress":"2.7"}', "null"]) {
+  run = makeGame({ ChankasMap: MAPSTUB, localStorage: memStorage({ "chankas.progress.v1": bad }) });
+  run("document.querySelector('#start').onclick()");
+  const pr = run("mapS.progress");
+  assert.ok(Number.isInteger(pr) && pr >= 0 && pr <= 5, bad + " → " + pr);
+  assert.ok(run("mapS.selected") <= 4);
+}
+const throwing = {
+  getItem() {
+    throw new Error("SecurityError");
+  },
+  setItem() {
+    throw new Error("QuotaExceeded");
+  },
+};
+run = makeGame({ ChankasMap: MAPSTUB, localStorage: throwing });
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "map");
+run("mapKey('Enter'); win()");
+assert.equal(run("state"), "won");
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "map");
+assert.equal(run("mapS.progress"), 1); // en memoria aunque no se pueda guardar
+// Fallback: sin módulo de mapa (o si prepare() falla) se va directo al nivel.
+run = makeGame();
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "playing");
+run("win()");
+assert.equal(run("document.querySelector('#start').textContent"), "Jugar otra vez →");
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "playing");
+run = makeGame({ ChankasMap: { ...MAPSTUB, prepare: () => false } });
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "playing");
+run = makeGame({
+  ChankasMap: {
+    ...MAPSTUB,
+    prepare() {
+      throw new Error("x");
+    },
+  },
+});
+run("document.querySelector('#start').onclick()");
+assert.equal(run("state"), "playing");
 console.log(
-  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs).",
+  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback).",
 );

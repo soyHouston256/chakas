@@ -19,7 +19,8 @@ let state = "menu",
   llamaS = { anim: "idle", animT: 0, face: 1, prev: 20 };
 // Arte opcional (art/sprites.js y art/background.js). Si falta, se usan los rectángulos.
 const SP = window.ChankasSprites || null,
-  BG = window.ChankasBackground || null;
+  BG = window.ChankasBackground || null,
+  MAP = window.ChankasMap || null;
 const ENEMY_KIND = ["perro", "arcabucero", "piquero", "capitan"];
 const SPR = { facing: 1, fill: 1, flash: false, alpha: 1, rotation: 0, active: false, w: 0, h: 0 };
 const BG_OPTS = { width: 960, height: 540, levelLength: 4200 };
@@ -249,6 +250,7 @@ document.querySelector("#start").onclick = (e) => {
     state = "playing";
     overlay.style.display = "none";
   } else if (state === "lost") respawn();
+  else if ((state === "menu" || state === "won") && openMap(state === "won")) return;
   else reset();
 };
 restartBtn.onclick = (e) => {
@@ -272,6 +274,10 @@ function pause() {
 addEventListener("keydown", (e) => {
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
     e.preventDefault();
+  if (state === "map") {
+    if (!e.repeat || e.code.startsWith("Arrow")) mapKey(e.code);
+    return;
+  }
   if (e.code === "KeyP" && !e.repeat) pause();
   keys.add(e.code);
 });
@@ -283,6 +289,7 @@ addEventListener("blur", () => {
 document.querySelectorAll("[data-key]").forEach((b) => {
   b.onpointerdown = (e) => {
     e.preventDefault();
+    if (state === "map") return mapKey(b.dataset.key);
     b.setPointerCapture(e.pointerId);
     keys.add(b.dataset.key);
   };
@@ -332,12 +339,17 @@ function resolveDeath() {
 }
 function win() {
   state = "won";
+  const withMap = mapReady();
+  if (withMap) saveProgress(Math.max(mapS.progress, 1));
   show(
     "¡El paso es nuestro!",
     "Abriste el camino junto a tu llama. Quipu: " +
       score +
-      " puntos. Esta es la primera etapa de CHANKAS.",
-    "Jugar otra vez →",
+      (withMap
+        ? " puntos. Sacsayhuamán queda atrás: el Qhapaq Ñan sigue hacia Ollantaytambo."
+        : " puntos. Esta es la primera etapa de CHANKAS."),
+    withMap ? "Ver el mapa →" : "Jugar otra vez →",
+    withMap,
   );
 }
 // Macana: golpe corto de respaldo cuando la manta está vacía (el jefe siempre es vencible).
@@ -986,13 +998,165 @@ function hudLine() {
     player.bola
   );
 }
+// ---------------------------------------------------------------------------
+// Mapa de misiones (art/map.js). Solo la etapa 1 es jugable; las demás se pueden
+// seleccionar para leer su ficha. El progreso (etapas completadas) se guarda en
+// localStorage; si el módulo del mapa falta o no puede prepararse, se va directo al nivel.
+const PROGRESS_KEY = "chankas.progress.v1",
+  MAP_WALK = 2.2; // segundos que tarda el héroe entre dos etapas
+const mapS = { progress: 0, selected: 0, heroT: 0, walk: null, msg: 0 };
+let mapOk = null;
+function mapReady() {
+  if (mapOk === null) {
+    try {
+      mapOk = !!(MAP && MAP.stages && MAP.stages.length && MAP.prepare());
+    } catch {
+      mapOk = false;
+    }
+  }
+  return mapOk;
+}
+function stageCount() {
+  return MAP && MAP.stages ? MAP.stages.length : 1;
+}
+function clampProgress(v) {
+  v = Math.floor(Number(v));
+  return Number.isFinite(v) ? Math.max(0, Math.min(stageCount(), v)) : 0;
+}
+function loadProgress() {
+  let v = 0;
+  try {
+    const raw = window.localStorage?.getItem(PROGRESS_KEY);
+    if (raw != null) v = JSON.parse(raw)?.progress;
+  } catch {}
+  return (mapS.progress = clampProgress(v));
+}
+function saveProgress(v) {
+  mapS.progress = clampProgress(v);
+  try {
+    window.localStorage?.setItem(PROGRESS_KEY, JSON.stringify({ progress: mapS.progress }));
+  } catch {}
+}
+// Abre el mapa. afterWin: la etapa 1 queda completada y el héroe camina a la siguiente.
+function openMap(afterWin = false) {
+  if (!mapReady()) return false;
+  if (afterWin) {
+    saveProgress(Math.max(loadProgress(), 1));
+    const last = stageCount() - 1;
+    const to = Math.min(mapS.progress, last);
+    mapS.walk = to > 0 ? { from: to - 1, to, t: 0 } : null;
+    mapS.heroT = mapS.walk ? mapS.walk.from : to;
+    mapS.selected = to;
+  } else {
+    loadProgress();
+    mapS.walk = null;
+    mapS.heroT = mapS.selected = Math.min(mapS.progress, stageCount() - 1);
+  }
+  mapS.msg = 0;
+  state = "map";
+  keys.clear();
+  overlay.style.display = "none";
+  restartBtn.hidden = true;
+  return true;
+}
+function stagePlayable(i) {
+  const s = MAP && MAP.stages && MAP.stages[i];
+  if (!s || !s.playable) return false;
+  return (MAP.statusOf ? MAP.statusOf(i, mapS.progress) : "current") !== "locked";
+}
+function playStage(i) {
+  if (state !== "map") return false;
+  if (!stagePlayable(i)) {
+    mapS.msg = 1.6; // aviso «Próximamente» en pantalla
+    tone(160);
+    return false;
+  }
+  mapS.walk = null;
+  if (canvas.style) canvas.style.cursor = "default";
+  reset();
+  return true;
+}
+function mapKey(code) {
+  if (state !== "map") return;
+  const n = stageCount();
+  if (code === "ArrowLeft" || code === "KeyA") mapS.selected = Math.max(0, mapS.selected - 1);
+  else if (code === "ArrowRight" || code === "KeyD")
+    mapS.selected = Math.min(n - 1, mapS.selected + 1);
+  else if (code === "Enter" || code === "NumpadEnter" || code === "KeyJ" || code === "Space")
+    playStage(mapS.selected);
+  else return;
+  tone(code.startsWith("Arrow") || code === "KeyA" || code === "KeyD" ? 520 : 420);
+}
+function updateMap(dt) {
+  if (mapS.msg > 0) mapS.msg = Math.max(0, mapS.msg - dt);
+  const w = mapS.walk;
+  if (!w) return;
+  w.t += dt / MAP_WALK;
+  if (w.t >= 1) {
+    mapS.heroT = w.to;
+    mapS.walk = null;
+  } else mapS.heroT = w.from + (w.to - w.from) * w.t;
+}
+function drawMap() {
+  MAP.draw(ctx, renderT, {
+    width: W,
+    height: H,
+    progress: mapS.progress,
+    selected: mapS.selected,
+    heroT: mapS.heroT,
+  });
+  if (mapS.msg > 0) {
+    ctx.globalAlpha = Math.min(1, mapS.msg * 2);
+    rect(150, 236, 420, 56, "#1b1210ee");
+    ctx.textAlign = "center";
+    ctx.font = "bold 18px Georgia, serif";
+    ctx.fillStyle = "#f2c14e";
+    ctx.fillText("Próximamente", 360, 260);
+    ctx.font = "13px Georgia, serif";
+    ctx.fillStyle = "#f6e9cc";
+    ctx.fillText("La próxima etapa está en construcción.", 360, 280);
+    ctx.textAlign = "left";
+    ctx.globalAlpha = 1;
+  }
+}
+// Ratón / toque en el mapa: un toque selecciona; tocar la etapa ya elegida la juega.
+function canvasPoint(e) {
+  const r = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
+  if (!r || !r.width) return [e.offsetX ?? 0, e.offsetY ?? 0];
+  return [((e.clientX - r.left) * W) / r.width, ((e.clientY - r.top) * H) / r.height];
+}
+function mapPointer(x, y) {
+  if (state !== "map" || !MAP.stageAt) return -1;
+  const i = MAP.stageAt(x, y);
+  if (i < 0) return -1;
+  if (i === mapS.selected) playStage(i);
+  else {
+    mapS.selected = i;
+    tone(520);
+  }
+  return i;
+}
+canvas.onpointerdown = (e) => {
+  if (state !== "map") return;
+  e.preventDefault?.();
+  mapPointer(...canvasPoint(e));
+};
+canvas.onpointermove = (e) => {
+  if (state !== "map" || !MAP.stageAt || !canvas.style) return;
+  canvas.style.cursor = MAP.stageAt(...canvasPoint(e)) >= 0 ? "pointer" : "default";
+};
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.033);
   last = t;
   renderT += dt;
-  if (state === "playing") update(dt);
-  else if (state === "won" || state === "lost") updateFx(dt);
-  draw();
+  if (state === "map") {
+    updateMap(dt);
+    drawMap();
+  } else {
+    if (state === "playing") update(dt);
+    else if (state === "won" || state === "lost") updateFx(dt);
+    draw();
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

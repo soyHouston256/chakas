@@ -790,7 +790,7 @@
     var SP = root.ChankasSprites;
     // en una etapa, el héroe espera junto al icono (no encima); al caminar sigue la ruta
     var fr = heroT - Math.floor(heroT), wgt = moving ? Math.max(0, 1 - Math.min(fr, 1 - fr) * 6) : 1;
-    var ox = -30 * wgt, oy = 8 * wgt;
+    var ox = -32 * wgt, oy = -4 * wgt;
     var hx = snap(p[0] + ox), hy = snap(p[1] + oy) + 4;
     var lx = moving ? snap(lp[0] + ox) : hx - 21, ly = moving ? snap(lp[1] + oy) + 4 : hy;
     ctx.fillStyle = 'rgba(16,10,8,0.5)';
