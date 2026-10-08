@@ -1,1 +1,54 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>CHANKAS · Camino de resistencia</title><link rel="stylesheet" href="style.css"></head><body><header><a href="./">CHANKAS<span>CAMINO DE RESISTENCIA</span></a><button id="sound">Sonido: no</button></header><main><div class="intro"><span>PRIMERA EXPEDICIÓN / 1536</span><h1>Una piedra puede cambiar el camino.</h1><p>Recorre los andenes, abastece tu manta y abre paso junto a tu llama.</p></div><div class="stage"><canvas id="game" width="960" height="540" aria-label="Juego de acción lateral Chankas"></canvas><div id="overlay"><span>QHAPAQ ÑAN · NIVEL 01</span><h2 id="title">El paso de los andenes</h2><p id="message">La huaraca, tu manta y una compañera fiel. Llega al final del camino y derrota al capitán de la expedición.</p><button id="start">Comenzar expedición →</button></div></div><div class="controls"><span><b>A D / ← →</b> caminar</span><span><b>Espacio / ↑</b> saltar</span><span><b>J</b> huaraca</span><span><b>K</b> piedra incendiaria</span><span><b>E</b> recargar</span><span><b>P</b> pausa</span></div><div class="touch"><button data-key="ArrowLeft">◀</button><button data-key="ArrowRight">▶</button><button data-key="Space">Saltar</button><button data-key="KeyJ">Huaraca</button><button data-key="KeyK">Fuego</button><button data-key="KeyE">Recargar</button></div><footer>Historia alternativa inspirada en la resistencia andina. Personajes ficticios, arte y sonidos originales. Prototipo v0.1.</footer></main><script src="game.js"></script></body></html>
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>CHANKAS · Camino de resistencia</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <a href="./">CHANKAS<span>CAMINO DE RESISTENCIA</span></a
+      ><button id="sound">Sonido: no</button>
+    </header>
+    <main>
+      <div class="intro">
+        <span>PRIMERA EXPEDICIÓN / 1536</span>
+        <h1>Una piedra puede cambiar el camino.</h1>
+        <p>Recorre los andenes, abastece tu manta y abre paso junto a tu llama.</p>
+      </div>
+      <div class="stage">
+        <canvas
+          id="game"
+          width="960"
+          height="540"
+          aria-label="Juego de acción lateral Chankas"
+        ></canvas>
+        <div id="overlay">
+          <span>QHAPAQ ÑAN · NIVEL 01</span>
+          <h2 id="title">El paso de los andenes</h2>
+          <p id="message">
+            La huaraca, tu manta y una compañera fiel. Llega al final del camino y derrota al
+            capitán de la expedición.
+          </p>
+          <button id="start">Comenzar expedición →</button>
+        </div>
+      </div>
+      <div class="controls">
+        <span><b>A D / ← →</b> caminar</span><span><b>Espacio / ↑</b> saltar</span
+        ><span><b>J</b> huaraca</span><span><b>K</b> piedra incendiaria</span
+        ><span><b>E</b> recargar</span><span><b>P</b> pausa</span>
+      </div>
+      <div class="touch">
+        <button data-key="ArrowLeft">◀</button><button data-key="ArrowRight">▶</button
+        ><button data-key="Space">Saltar</button><button data-key="KeyJ">Huaraca</button
+        ><button data-key="KeyK">Fuego</button><button data-key="KeyE">Recargar</button>
+      </div>
+      <footer>
+        Historia alternativa inspirada en la resistencia andina. Personajes ficticios, arte y
+        sonidos originales. Prototipo v0.1.
+      </footer>
+    </main>
+    <script src="game.js"></script>
+  </body>
+</html>

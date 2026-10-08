@@ -1,32 +1,446 @@
-'use strict';
-const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
-const overlay=document.querySelector('#overlay'),keys=new Set();
-let state='menu',last=0,world,player,shots,enemies,particles,cam=0,score=0,sound=false,audio;
-const W=960,H=540,GROUND=440,END=4200;
-const piles=[180,850,1600,2450,3200];
-const platforms=[{x:580,y:350,w:180},{x:1250,y:340,w:200},{x:2100,y:345,w:180},{x:2820,y:330,w:220}];
-function tone(freq=350){if(!sound)return;try{audio??=new(window.AudioContext||window.webkitAudioContext)();const o=audio.createOscillator(),g=audio.createGain();o.connect(g);g.connect(audio.destination);o.frequency.value=freq;g.gain.setValueAtTime(.04,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.12);o.start();o.stop(audio.currentTime+.12)}catch{}}
-function reset(){player={x:70,y:GROUND-58,w:28,h:58,vy:0,hp:6,ammo:24,fire:5,face:1,cool:0,inv:0,ground:true};shots=[];particles=[];score=0;cam=0;world={time:0,llama:20,spit:0,checkpoint:70};enemies=[];[620,980,1360,1750,2150,2600,2940,3300].forEach((x,i)=>enemies.push({x,y:GROUND-48,w:30,h:48,hp:3,type:i%3,cool:1+i%2,home:x,dead:false}));enemies.push({x:3910,y:GROUND-96,w:72,h:96,hp:32,max:32,type:3,cool:1.5,home:3910,dead:false});state='playing';overlay.style.display='none'}
-function show(title,message,label){document.querySelector('#title').textContent=title;document.querySelector('#message').textContent=message;document.querySelector('#start').textContent=label;overlay.style.display='flex'}
-document.querySelector('#start').onclick=()=>{if(state==='paused'){state='playing';overlay.style.display='none'}else reset()};
-document.querySelector('#sound').onclick=()=>{sound=!sound;document.querySelector('#sound').textContent='Sonido: '+(sound?'sí':'no');tone()};
-function pause(){if(state==='playing'){state='paused';show('Un respiro en el camino','Tu expedición te espera.','Continuar →')}else if(state==='paused'){state='playing';overlay.style.display='none'}}
-addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='KeyP'&&!e.repeat)pause();keys.add(e.code)});addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>{keys.clear();if(state==='playing')pause()});
-document.querySelectorAll('[data-key]').forEach(b=>{b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);keys.add(b.dataset.key)};b.onpointerup=b.onpointercancel=()=>keys.delete(b.dataset.key)});
-function burst(x,y,color,n=12){for(let i=0;i<n;i++)particles.push({x,y,vx:(Math.random()-.5)*240,vy:-Math.random()*230,t:.6,color})}
-function hit(){if(player.inv>0)return;player.hp--;player.inv=1.5;burst(player.x,player.y,'#e9b25f');tone(130);if(player.hp<=0){state='lost';show('El camino aún te necesita','Vuelve a intentarlo. Recarga en los montones de piedras y salta los proyectiles.','Volver a jugar →')}}
-function shoot(fire){if(player.cool>0||player.ammo<=0||fire&&player.fire<=0)return;player.ammo--;if(fire)player.fire--;player.cool=fire?.65:.24;shots.push({x:player.x+14,y:player.y+23,vx:player.face*620,vy:fire?-70:0,life:1.4,good:true,damage:fire?5:1,fire});tone(fire?220:520)}
-function overlap(a,b){return a.x<b.x+b.w&&a.x+(a.w||8)>b.x&&a.y<b.y+b.h&&a.y+(a.h||8)>b.y}
-function update(dt){world.time+=dt;player.cool-=dt;player.inv-=dt;let direction=(keys.has('ArrowRight')||keys.has('KeyD')?1:0)-(keys.has('ArrowLeft')||keys.has('KeyA')?1:0);player.x=Math.max(0,Math.min(END-40,player.x+direction*230*dt));if(direction)player.face=direction;if((keys.has('Space')||keys.has('ArrowUp')||keys.has('KeyW'))&&player.ground){player.vy=-510;player.ground=false;tone(300)}const old=player.y+player.h;player.vy+=1250*dt;player.y+=player.vy*dt;player.ground=false;let floor=GROUND;for(const p of platforms)if(player.x+player.w>p.x&&player.x<p.x+p.w&&old<=p.y+2&&player.y+player.h>=p.y&&player.vy>=0)floor=Math.min(floor,p.y);if(player.y+player.h>=floor){player.y=floor-player.h;player.vy=0;player.ground=true}if(keys.has('KeyJ'))shoot(false);if(keys.has('KeyK'))shoot(true);if(keys.has('KeyE')&&piles.some(x=>Math.abs(player.x-x)<85)){player.ammo=24;world.checkpoint=player.x}world.llama+=(player.x-80-world.llama)*dt*3;world.spit-=dt;
-for(const e of enemies){if(e.dead||Math.abs(e.x-player.x)>850)continue;const dir=player.x>e.x?1:-1;e.cool-=dt;if(e.type===0)e.x+=dir*65*dt;else if(e.type===2)e.x=e.home+Math.sin(world.time*1.8)*85;else if(e.type===3)e.x+=dir*45*dt;if(overlap(player,e))hit();if(e.cool<=0&&Math.abs(e.x-player.x)<650){e.cool=e.type===3?.85:e.type===1?1.8:2.5;shots.push({x:e.x,y:e.y+22,vx:dir*(e.type===3?300:240),vy:0,life:3,good:false});if(e.type===3)shots.push({x:e.x,y:e.y+55,vx:dir*330,vy:0,life:3,good:false})}if(Math.abs(e.x-world.llama)<240&&world.spit<=0){shots.push({x:world.llama+12,y:GROUND-48,vx:dir*-400,vy:0,life:.65,good:true,damage:1,spit:true});world.spit=2.8}}
-for(const s of shots){s.x+=s.vx*dt;s.y+=s.vy*dt;if(s.fire)s.vy+=200*dt;s.life-=dt;if(s.good){for(const e of enemies)if(!e.dead&&overlap(s,e)){e.hp-=s.damage;s.life=0;burst(s.x,s.y,s.fire?'#f09e47':'#eddb9c',5);if(e.hp<=0){e.dead=true;score+=e.type===3?1000:100;burst(e.x,e.y,'#d6c5a3',22);tone(700);if(e.type===3){state='won';show('¡El paso es nuestro!','Abriste el camino junto a tu llama. Quipu: '+score+' puntos. Esta es la primera etapa de CHANKAS.','Jugar otra vez →')}}break}}else if(overlap(s,player)){s.life=0;hit()}}
-shots=shots.filter(s=>s.life>0);for(const p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=700*dt;p.t-=dt}particles=particles.filter(p=>p.t>0);cam=Math.max(0,Math.min(END-W,player.x-280))}
-function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
-function mountain(x,y,w,h,color){ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w*.46,y-h);ctx.lineTo(x+w,y);ctx.fill()}
-function person(x,y,type,frame=0){const hero=type===-1,boss=type===3,scale=boss?1.5:1;ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.scale(scale,scale);rect(5,7,22,14,hero?'#bd855d':'#afaaa0');rect(3,0,26,9,hero?'#da694d':'#6f8589');rect(8,-4,14,5,hero?'#e5ba64':'#8b9b99');rect(4,22,25,24,hero?'#b94437':'#53676c');rect(5,31,23,6,hero?'#e8b953':'#9eadaa');rect(1,24,7,22,hero?'#c99166':'#758486');rect(27,25,7,19,hero?'#c99166':'#758486');rect(7,46,8,12+frame,'#312d2c');rect(21,46,8,12-frame,'#312d2c');if(hero){rect(-3,23,10,22,'#d2a769');rect(0,25,4,15,'#8a5f4a');rect(32,30,17,3,'#dfd0a8')}else rect(30,30,type===0?8:24,4,'#b4b3a2');ctx.restore()}
-function draw(){const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,'#274c5a');grad.addColorStop(1,'#a4b6a2');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);rect(730-cam*.05,70,48,48,'#f0d38a');for(let i=-1;i<12;i++)mountain(i*290-(cam*.15%290),330,390,210+i%3*40,'#456a71');for(let i=-1;i<13;i++)mountain(i*240-(cam*.3%240),400,320,170+i%2*60,'#65817a');for(let i=-1;i<15;i++){let x=i*160-(cam*.55%160);rect(x,350,150,15,'#839078');rect(x+18,365,132,16,'#697d65');rect(x+35,381,115,20,'#506d5d')}
-ctx.save();ctx.translate(-cam,0);rect(0,GROUND,END,100,'#716748');rect(0,GROUND,END,8,'#c2b17d');for(let i=0;i<END;i+=48){rect(i,GROUND+12,44,17,'#918368');rect(i+20,GROUND+35,44,17,'#807359')}for(const p of platforms){rect(p.x,p.y,p.w,12,'#c0ac77');rect(p.x+8,p.y+12,p.w-16,GROUND-p.y-12,'#7b8065');for(let j=0;j<p.w;j+=40)rect(p.x+j+5,p.y+20,32,18,'#94957a')}
-for(const x of piles){for(let i=0;i<5;i++)rect(x-15+i*8,GROUND-9-(i%2)*7,12,9,'#c5c6ae');rect(x,GROUND-67,3,45,'#b39f72');rect(x+3,GROUND-67,34,19,'#dcb55d');if(player&&Math.abs(player.x-x)<85){ctx.fillStyle='#fff0bc';ctx.font='bold 14px sans-serif';ctx.fillText('E · RECARGAR',x-40,GROUND-83)}}
-if(player){let lx=world.llama;rect(lx-10,GROUND-39,42,20,'#e6d6ad');rect(lx+23,GROUND-62,11,37,'#e6d6ad');rect(lx+23,GROUND-67,22,12,'#e6d6ad');rect(lx+25,GROUND-77,4,12,'#e6d6ad');rect(lx-5,GROUND-20,6,20,'#cab98f');rect(lx+23,GROUND-20,6,20,'#cab98f');rect(lx,GROUND-40,22,16,'#a04d39');for(const e of enemies)if(!e.dead){person(e.x,e.y,e.type);if(e.type===3){rect(e.x-10,e.y-20,110,7,'#342f2a');rect(e.x-10,e.y-20,110*e.hp/e.max,7,'#db7052')}}if(player.inv<=0||Math.floor(player.inv*10)%2===0)person(player.x,player.y,-1,player.ground?Math.sin(world.time*15)*3:0);for(const s of shots)rect(s.x,s.y,s.fire?13:7,s.fire?10:6,s.good?s.fire?'#ff9e49':s.spit?'#b3deac':'#eee0b3':'#ef7356');for(const p of particles)rect(p.x,p.y,4,4,p.color)}ctx.restore();
-rect(18,18,430,58,'#102b30e8');ctx.font='bold 16px sans-serif';ctx.fillStyle='#f3d394';ctx.fillText('CHANKAS',34,42);if(player){ctx.font='14px sans-serif';ctx.fillStyle='#f6e9cc';ctx.fillText('VIDA '+ '♥'.repeat(Math.max(0,player.hp))+'   PIEDRAS '+player.ammo+'/24   FUEGO '+player.fire,34,63);ctx.textAlign='right';ctx.fillText('QUIPU '+score,W-28,38);ctx.fillText(Math.round(player.x/END*100)+'% DEL CAMINO',W-28,60);ctx.textAlign='left';if(player.ammo===0){ctx.fillStyle='#f8d48c';ctx.fillText('Manta vacía: vuelve a una bandera y pulsa E',260,105)}if(player.x>3400){ctx.fillStyle='#f8d48c';ctx.fillText('CAPITÁN DE LA EXPEDICIÓN',580,100)}}}
-function loop(t){const dt=Math.min((t-last)/1000,.033);last=t;if(state==='playing')update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+"use strict";
+const canvas = document.querySelector("canvas"),
+  ctx = canvas.getContext("2d");
+const overlay = document.querySelector("#overlay"),
+  keys = new Set();
+let state = "menu",
+  last = 0,
+  world,
+  player,
+  shots,
+  enemies,
+  particles,
+  cam = 0,
+  score = 0,
+  sound = false,
+  audio;
+const W = 960,
+  H = 540,
+  GROUND = 440,
+  END = 4200;
+const piles = [180, 850, 1600, 2450, 3200];
+const platforms = [
+  { x: 580, y: 350, w: 180 },
+  { x: 1250, y: 340, w: 200 },
+  { x: 2100, y: 345, w: 180 },
+  { x: 2820, y: 330, w: 220 },
+];
+function tone(freq = 350) {
+  if (!sound) return;
+  try {
+    audio ??= new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(),
+      g = audio.createGain();
+    o.connect(g);
+    g.connect(audio.destination);
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.04, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.12);
+    o.start();
+    o.stop(audio.currentTime + 0.12);
+  } catch {}
+}
+function reset() {
+  player = {
+    x: 70,
+    y: GROUND - 58,
+    w: 28,
+    h: 58,
+    vy: 0,
+    hp: 6,
+    ammo: 24,
+    fire: 5,
+    face: 1,
+    cool: 0,
+    inv: 0,
+    ground: true,
+  };
+  shots = [];
+  particles = [];
+  score = 0;
+  cam = 0;
+  world = { time: 0, llama: 20, spit: 0, checkpoint: 70 };
+  enemies = [];
+  [620, 980, 1360, 1750, 2150, 2600, 2940, 3300].forEach((x, i) =>
+    enemies.push({
+      x,
+      y: GROUND - 48,
+      w: 30,
+      h: 48,
+      hp: 3,
+      type: i % 3,
+      cool: 1 + (i % 2),
+      home: x,
+      dead: false,
+    }),
+  );
+  enemies.push({
+    x: 3910,
+    y: GROUND - 96,
+    w: 72,
+    h: 96,
+    hp: 32,
+    max: 32,
+    type: 3,
+    cool: 1.5,
+    home: 3910,
+    dead: false,
+  });
+  state = "playing";
+  overlay.style.display = "none";
+}
+function show(title, message, label) {
+  document.querySelector("#title").textContent = title;
+  document.querySelector("#message").textContent = message;
+  document.querySelector("#start").textContent = label;
+  overlay.style.display = "flex";
+}
+document.querySelector("#start").onclick = () => {
+  if (state === "paused") {
+    state = "playing";
+    overlay.style.display = "none";
+  } else reset();
+};
+document.querySelector("#sound").onclick = () => {
+  sound = !sound;
+  document.querySelector("#sound").textContent = "Sonido: " + (sound ? "sí" : "no");
+  tone();
+};
+function pause() {
+  if (state === "playing") {
+    state = "paused";
+    show("Un respiro en el camino", "Tu expedición te espera.", "Continuar →");
+  } else if (state === "paused") {
+    state = "playing";
+    overlay.style.display = "none";
+  }
+}
+addEventListener("keydown", (e) => {
+  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
+    e.preventDefault();
+  if (e.code === "KeyP" && !e.repeat) pause();
+  keys.add(e.code);
+});
+addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("blur", () => {
+  keys.clear();
+  if (state === "playing") pause();
+});
+document.querySelectorAll("[data-key]").forEach((b) => {
+  b.onpointerdown = (e) => {
+    e.preventDefault();
+    b.setPointerCapture(e.pointerId);
+    keys.add(b.dataset.key);
+  };
+  b.onpointerup = b.onpointercancel = () => keys.delete(b.dataset.key);
+});
+function burst(x, y, color, n = 12) {
+  for (let i = 0; i < n; i++)
+    particles.push({
+      x,
+      y,
+      vx: (Math.random() - 0.5) * 240,
+      vy: -Math.random() * 230,
+      t: 0.6,
+      color,
+    });
+}
+function hit() {
+  if (player.inv > 0) return;
+  player.hp--;
+  player.inv = 1.5;
+  burst(player.x, player.y, "#e9b25f");
+  tone(130);
+  if (player.hp <= 0) {
+    state = "lost";
+    show(
+      "El camino aún te necesita",
+      "Vuelve a intentarlo. Recarga en los montones de piedras y salta los proyectiles.",
+      "Volver a jugar →",
+    );
+  }
+}
+function shoot(fire) {
+  if (player.cool > 0 || player.ammo <= 0 || (fire && player.fire <= 0)) return;
+  player.ammo--;
+  if (fire) player.fire--;
+  player.cool = fire ? 0.65 : 0.24;
+  shots.push({
+    x: player.x + 14,
+    y: player.y + 23,
+    vx: player.face * 620,
+    vy: fire ? -70 : 0,
+    life: 1.4,
+    good: true,
+    damage: fire ? 5 : 1,
+    fire,
+  });
+  tone(fire ? 220 : 520);
+}
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + (a.w || 8) > b.x && a.y < b.y + b.h && a.y + (a.h || 8) > b.y;
+}
+function update(dt) {
+  world.time += dt;
+  player.cool -= dt;
+  player.inv -= dt;
+  let direction =
+    (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
+    (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
+  player.x = Math.max(0, Math.min(END - 40, player.x + direction * 230 * dt));
+  if (direction) player.face = direction;
+  if ((keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW")) && player.ground) {
+    player.vy = -510;
+    player.ground = false;
+    tone(300);
+  }
+  const old = player.y + player.h;
+  player.vy += 1250 * dt;
+  player.y += player.vy * dt;
+  player.ground = false;
+  let floor = GROUND;
+  for (const p of platforms)
+    if (
+      player.x + player.w > p.x &&
+      player.x < p.x + p.w &&
+      old <= p.y + 2 &&
+      player.y + player.h >= p.y &&
+      player.vy >= 0
+    )
+      floor = Math.min(floor, p.y);
+  if (player.y + player.h >= floor) {
+    player.y = floor - player.h;
+    player.vy = 0;
+    player.ground = true;
+  }
+  if (keys.has("KeyJ")) shoot(false);
+  if (keys.has("KeyK")) shoot(true);
+  if (keys.has("KeyE") && piles.some((x) => Math.abs(player.x - x) < 85)) {
+    player.ammo = 24;
+    world.checkpoint = player.x;
+  }
+  world.llama += (player.x - 80 - world.llama) * dt * 3;
+  world.spit -= dt;
+  for (const e of enemies) {
+    if (e.dead || Math.abs(e.x - player.x) > 850) continue;
+    const dir = player.x > e.x ? 1 : -1;
+    e.cool -= dt;
+    if (e.type === 0) e.x += dir * 65 * dt;
+    else if (e.type === 2) e.x = e.home + Math.sin(world.time * 1.8) * 85;
+    else if (e.type === 3) e.x += dir * 45 * dt;
+    if (overlap(player, e)) hit();
+    if (e.cool <= 0 && Math.abs(e.x - player.x) < 650) {
+      e.cool = e.type === 3 ? 0.85 : e.type === 1 ? 1.8 : 2.5;
+      shots.push({
+        x: e.x,
+        y: e.y + 22,
+        vx: dir * (e.type === 3 ? 300 : 240),
+        vy: 0,
+        life: 3,
+        good: false,
+      });
+      if (e.type === 3)
+        shots.push({ x: e.x, y: e.y + 55, vx: dir * 330, vy: 0, life: 3, good: false });
+    }
+    if (Math.abs(e.x - world.llama) < 240 && world.spit <= 0) {
+      shots.push({
+        x: world.llama + 12,
+        y: GROUND - 48,
+        vx: dir * -400,
+        vy: 0,
+        life: 0.65,
+        good: true,
+        damage: 1,
+        spit: true,
+      });
+      world.spit = 2.8;
+    }
+  }
+  for (const s of shots) {
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    if (s.fire) s.vy += 200 * dt;
+    s.life -= dt;
+    if (s.good) {
+      for (const e of enemies)
+        if (!e.dead && overlap(s, e)) {
+          e.hp -= s.damage;
+          s.life = 0;
+          burst(s.x, s.y, s.fire ? "#f09e47" : "#eddb9c", 5);
+          if (e.hp <= 0) {
+            e.dead = true;
+            score += e.type === 3 ? 1000 : 100;
+            burst(e.x, e.y, "#d6c5a3", 22);
+            tone(700);
+            if (e.type === 3) {
+              state = "won";
+              show(
+                "¡El paso es nuestro!",
+                "Abriste el camino junto a tu llama. Quipu: " +
+                  score +
+                  " puntos. Esta es la primera etapa de CHANKAS.",
+                "Jugar otra vez →",
+              );
+            }
+          }
+          break;
+        }
+    } else if (overlap(s, player)) {
+      s.life = 0;
+      hit();
+    }
+  }
+  shots = shots.filter((s) => s.life > 0);
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 700 * dt;
+    p.t -= dt;
+  }
+  particles = particles.filter((p) => p.t > 0);
+  cam = Math.max(0, Math.min(END - W, player.x - 280));
+}
+function rect(x, y, w, h, c) {
+  ctx.fillStyle = c;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+function mountain(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w * 0.46, y - h);
+  ctx.lineTo(x + w, y);
+  ctx.fill();
+}
+function person(x, y, type, frame = 0) {
+  const hero = type === -1,
+    boss = type === 3,
+    scale = boss ? 1.5 : 1;
+  ctx.save();
+  ctx.translate(Math.round(x), Math.round(y));
+  ctx.scale(scale, scale);
+  rect(5, 7, 22, 14, hero ? "#bd855d" : "#afaaa0");
+  rect(3, 0, 26, 9, hero ? "#da694d" : "#6f8589");
+  rect(8, -4, 14, 5, hero ? "#e5ba64" : "#8b9b99");
+  rect(4, 22, 25, 24, hero ? "#b94437" : "#53676c");
+  rect(5, 31, 23, 6, hero ? "#e8b953" : "#9eadaa");
+  rect(1, 24, 7, 22, hero ? "#c99166" : "#758486");
+  rect(27, 25, 7, 19, hero ? "#c99166" : "#758486");
+  rect(7, 46, 8, 12 + frame, "#312d2c");
+  rect(21, 46, 8, 12 - frame, "#312d2c");
+  if (hero) {
+    rect(-3, 23, 10, 22, "#d2a769");
+    rect(0, 25, 4, 15, "#8a5f4a");
+    rect(32, 30, 17, 3, "#dfd0a8");
+  } else rect(30, 30, type === 0 ? 8 : 24, 4, "#b4b3a2");
+  ctx.restore();
+}
+function draw() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, "#274c5a");
+  grad.addColorStop(1, "#a4b6a2");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  rect(730 - cam * 0.05, 70, 48, 48, "#f0d38a");
+  for (let i = -1; i < 12; i++)
+    mountain(i * 290 - ((cam * 0.15) % 290), 330, 390, 210 + (i % 3) * 40, "#456a71");
+  for (let i = -1; i < 13; i++)
+    mountain(i * 240 - ((cam * 0.3) % 240), 400, 320, 170 + (i % 2) * 60, "#65817a");
+  for (let i = -1; i < 15; i++) {
+    let x = i * 160 - ((cam * 0.55) % 160);
+    rect(x, 350, 150, 15, "#839078");
+    rect(x + 18, 365, 132, 16, "#697d65");
+    rect(x + 35, 381, 115, 20, "#506d5d");
+  }
+  ctx.save();
+  ctx.translate(-cam, 0);
+  rect(0, GROUND, END, 100, "#716748");
+  rect(0, GROUND, END, 8, "#c2b17d");
+  for (let i = 0; i < END; i += 48) {
+    rect(i, GROUND + 12, 44, 17, "#918368");
+    rect(i + 20, GROUND + 35, 44, 17, "#807359");
+  }
+  for (const p of platforms) {
+    rect(p.x, p.y, p.w, 12, "#c0ac77");
+    rect(p.x + 8, p.y + 12, p.w - 16, GROUND - p.y - 12, "#7b8065");
+    for (let j = 0; j < p.w; j += 40) rect(p.x + j + 5, p.y + 20, 32, 18, "#94957a");
+  }
+  for (const x of piles) {
+    for (let i = 0; i < 5; i++) rect(x - 15 + i * 8, GROUND - 9 - (i % 2) * 7, 12, 9, "#c5c6ae");
+    rect(x, GROUND - 67, 3, 45, "#b39f72");
+    rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
+    if (player && Math.abs(player.x - x) < 85) {
+      ctx.fillStyle = "#fff0bc";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("E · RECARGAR", x - 40, GROUND - 83);
+    }
+  }
+  if (player) {
+    let lx = world.llama;
+    rect(lx - 10, GROUND - 39, 42, 20, "#e6d6ad");
+    rect(lx + 23, GROUND - 62, 11, 37, "#e6d6ad");
+    rect(lx + 23, GROUND - 67, 22, 12, "#e6d6ad");
+    rect(lx + 25, GROUND - 77, 4, 12, "#e6d6ad");
+    rect(lx - 5, GROUND - 20, 6, 20, "#cab98f");
+    rect(lx + 23, GROUND - 20, 6, 20, "#cab98f");
+    rect(lx, GROUND - 40, 22, 16, "#a04d39");
+    for (const e of enemies)
+      if (!e.dead) {
+        person(e.x, e.y, e.type);
+        if (e.type === 3) {
+          rect(e.x - 10, e.y - 20, 110, 7, "#342f2a");
+          rect(e.x - 10, e.y - 20, (110 * e.hp) / e.max, 7, "#db7052");
+        }
+      }
+    if (player.inv <= 0 || Math.floor(player.inv * 10) % 2 === 0)
+      person(player.x, player.y, -1, player.ground ? Math.sin(world.time * 15) * 3 : 0);
+    for (const s of shots)
+      rect(
+        s.x,
+        s.y,
+        s.fire ? 13 : 7,
+        s.fire ? 10 : 6,
+        s.good ? (s.fire ? "#ff9e49" : s.spit ? "#b3deac" : "#eee0b3") : "#ef7356",
+      );
+    for (const p of particles) rect(p.x, p.y, 4, 4, p.color);
+  }
+  ctx.restore();
+  rect(18, 18, 430, 58, "#102b30e8");
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillStyle = "#f3d394";
+  ctx.fillText("CHANKAS", 34, 42);
+  if (player) {
+    ctx.font = "14px sans-serif";
+    ctx.fillStyle = "#f6e9cc";
+    ctx.fillText(
+      "VIDA " +
+        "♥".repeat(Math.max(0, player.hp)) +
+        "   PIEDRAS " +
+        player.ammo +
+        "/24   FUEGO " +
+        player.fire,
+      34,
+      63,
+    );
+    ctx.textAlign = "right";
+    ctx.fillText("QUIPU " + score, W - 28, 38);
+    ctx.fillText(Math.round((player.x / END) * 100) + "% DEL CAMINO", W - 28, 60);
+    ctx.textAlign = "left";
+    if (player.ammo === 0) {
+      ctx.fillStyle = "#f8d48c";
+      ctx.fillText("Manta vacía: vuelve a una bandera y pulsa E", 260, 105);
+    }
+    if (player.x > 3400) {
+      ctx.fillStyle = "#f8d48c";
+      ctx.fillText("CAPITÁN DE LA EXPEDICIÓN", 580, 100);
+    }
+  }
+}
+function loop(t) {
+  const dt = Math.min((t - last) / 1000, 0.033);
+  last = t;
+  if (state === "playing") update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
