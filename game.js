@@ -271,25 +271,44 @@ function pause() {
     overlay.style.display = "none";
   }
 }
+// Teclas usadas en el mapa: se ignoran (incluidas sus repeticiones) hasta soltarlas,
+// para que la tecla que confirma la etapa no dispare ni salte al empezar el nivel.
+const swallowed = new Set();
+function onControl(e) {
+  const el = e.target;
+  return !!(el && el.closest && el.closest("button, input, select, textarea, a"));
+}
 addEventListener("keydown", (e) => {
-  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
-    e.preventDefault();
   if (state === "map") {
-    if (!e.repeat || e.code.startsWith("Arrow")) mapKey(e.code);
+    // Con el foco en un botón (p. ej. «Sonido»), Enter/Espacio son del botón.
+    if (onControl(e) && (e.code === "Enter" || e.code === "Space" || e.code === "NumpadEnter")) return;
+    if (!e.repeat || e.code.startsWith("Arrow")) {
+      if (mapKey(e.code)) {
+        e.preventDefault();
+        swallowed.add(e.code);
+      }
+    } else if (swallowed.has(e.code)) e.preventDefault();
     return;
   }
+  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
+    e.preventDefault();
+  if (swallowed.has(e.code)) return;
   if (e.code === "KeyP" && !e.repeat) pause();
   keys.add(e.code);
 });
-addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("keyup", (e) => {
+  swallowed.delete(e.code);
+  keys.delete(e.code);
+});
 addEventListener("blur", () => {
   keys.clear();
+  swallowed.clear();
   if (state === "playing") pause();
 });
 document.querySelectorAll("[data-key]").forEach((b) => {
   b.onpointerdown = (e) => {
     e.preventDefault();
-    if (state === "map") return mapKey(b.dataset.key);
+    if (state === "map") return void mapKey(b.dataset.key);
     b.setPointerCapture(e.pointerId);
     keys.add(b.dataset.key);
   };
@@ -1004,7 +1023,8 @@ function hudLine() {
 // localStorage; si el módulo del mapa falta o no puede prepararse, se va directo al nivel.
 const PROGRESS_KEY = "chankas.progress.v1",
   MAP_WALK = 2.2; // segundos que tarda el héroe entre dos etapas
-const mapS = { progress: 0, selected: 0, heroT: 0, walk: null, msg: 0 };
+// armed: etapa elegida con un toque/clic previo (el segundo toque sobre ella la juega).
+const mapS = { progress: 0, selected: 0, heroT: 0, walk: null, msg: 0, armed: -1 };
 let mapOk = null;
 function mapReady() {
   if (mapOk === null) {
@@ -1053,6 +1073,7 @@ function openMap(afterWin = false) {
     mapS.heroT = mapS.selected = Math.min(mapS.progress, stageCount() - 1);
   }
   mapS.msg = 0;
+  mapS.armed = -1;
   state = "map";
   keys.clear();
   overlay.style.display = "none";
@@ -1076,16 +1097,20 @@ function playStage(i) {
   reset();
   return true;
 }
+// Devuelve true si el mapa gestionó la tecla.
 function mapKey(code) {
-  if (state !== "map") return;
+  if (state !== "map") return false;
   const n = stageCount();
   if (code === "ArrowLeft" || code === "KeyA") mapS.selected = Math.max(0, mapS.selected - 1);
   else if (code === "ArrowRight" || code === "KeyD")
     mapS.selected = Math.min(n - 1, mapS.selected + 1);
-  else if (code === "Enter" || code === "NumpadEnter" || code === "KeyJ" || code === "Space")
+  else if (code === "Enter" || code === "NumpadEnter" || code === "KeyJ" || code === "Space") {
     playStage(mapS.selected);
-  else return;
-  tone(code.startsWith("Arrow") || code === "KeyA" || code === "KeyD" ? 520 : 420);
+    return true;
+  } else return false;
+  mapS.armed = -1;
+  tone(520);
+  return true;
 }
 function updateMap(dt) {
   if (mapS.msg > 0) mapS.msg = Math.max(0, mapS.msg - dt);
@@ -1126,12 +1151,17 @@ function canvasPoint(e) {
   return [((e.clientX - r.left) * W) / r.width, ((e.clientY - r.top) * H) / r.height];
 }
 function mapPointer(x, y) {
-  if (state !== "map" || !MAP.stageAt) return -1;
-  const i = MAP.stageAt(x, y);
+  if (state !== "map") return -1;
+  // Botón de la ficha: juega la etapa elegida (o avisa «Próximamente»).
+  if (MAP.buttonAt && MAP.buttonAt(x, y)) {
+    playStage(mapS.selected);
+    return mapS.selected;
+  }
+  const i = MAP.stageAt ? MAP.stageAt(x, y) : -1;
   if (i < 0) return -1;
-  if (i === mapS.selected) playStage(i);
+  if (i === mapS.selected && mapS.armed === i) playStage(i);
   else {
-    mapS.selected = i;
+    mapS.selected = mapS.armed = i;
     tone(520);
   }
   return i;
@@ -1143,7 +1173,9 @@ canvas.onpointerdown = (e) => {
 };
 canvas.onpointermove = (e) => {
   if (state !== "map" || !MAP.stageAt || !canvas.style) return;
-  canvas.style.cursor = MAP.stageAt(...canvasPoint(e)) >= 0 ? "pointer" : "default";
+  const [x, y] = canvasPoint(e);
+  canvas.style.cursor =
+    MAP.stageAt(x, y) >= 0 || (MAP.buttonAt && MAP.buttonAt(x, y)) ? "pointer" : "default";
 };
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.033);

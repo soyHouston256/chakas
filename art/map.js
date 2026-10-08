@@ -14,6 +14,7 @@
  *   statusOf(i, progress)           -> 'completed' | 'current' | 'locked'
  *   stageAt(x, y)                   -> índice de etapa bajo (x, y) en coordenadas del canvas
  *                                      del último draw (o 960×540), o -1
+ *   buttonAt(x, y)                  -> true si (x, y) cae sobre el botón de la ficha
  *   project(lat, lon)               -> { x, y } en el sistema base 960×540
  *
  * Estilo: capas estáticas a 320×180 (mar, desierto, Andes con relieve y nieve, selva,
@@ -818,6 +819,12 @@
     return best;
   }
 
+  // ¿(x, y) cae sobre el botón «Enter: jugar / Próximamente» de la ficha?
+  function buttonAt(x, y) {
+    var bx = x / (lastScale || 1), by = y / (lastScale || 1);
+    return bx >= CARD.x + 18 && bx <= CARD.x + CARD.w - 18 && by >= CARD.y + CARD.h - 92 && by <= CARD.y + CARD.h - 52;
+  }
+
   buildRoute();
   root.ChankasMap = {
     prepare: prepare,
@@ -825,6 +832,7 @@
     stages: stages,
     statusOf: statusOf,
     stageAt: stageAt,
+    buttonAt: buttonAt,
     project: project,
     routeLength: function () { return route.total; }
   };

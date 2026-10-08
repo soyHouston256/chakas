@@ -41,12 +41,22 @@ function makeGame(windowGlobals = {}) {
         return [];
       },
     },
-    addEventListener() {},
+    addEventListener(type, fn) {
+      (listeners[type] ??= []).push(fn);
+    },
     requestAnimationFrame() {},
   };
+  const listeners = {};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync("game.js", "utf8"), context);
-  return (code) => vm.runInContext(code, context);
+  const r = (code) => vm.runInContext(code, context);
+  // Dispara los handlers reales registrados con addEventListener (teclado, blur).
+  r.fire = (type, ev = {}) => {
+    const e = { repeat: false, target: null, preventDefault() {}, ...ev };
+    for (const fn of listeners[type] || []) fn(e);
+    return e;
+  };
+  return r;
 }
 
 // 1) Lógica de juego (sin arte: fallback a rectángulos)
@@ -379,6 +389,7 @@ const MAPSTUB = {
   stages: RM.stages,
   statusOf: RM.statusOf,
   stageAt: RM.stageAt,
+  buttonAt: RM.buttonAt,
   prepare: () => true,
   draw: () => (mapDraws++, true),
 };
@@ -428,6 +439,49 @@ run("mapPointer(" + RM.stages[0].node + ")");
 assert.equal(run("mapS.selected"), 0);
 assert.equal(run("state"), "map");
 run("mapPointer(" + RM.stages[0].node + ")");
+assert.equal(run("state"), "playing");
+// Entrada real (handlers de teclado): la tecla que confirma la etapa no se filtra al nivel,
+// ni siquiera con autorrepetición, hasta que se suelta.
+run = makeGame({ ChankasMap: MAPSTUB, localStorage: memStorage() });
+run("document.querySelector('#start').onclick()");
+run.fire("keydown", { code: "KeyJ" });
+assert.equal(run("state"), "playing");
+run.fire("keydown", { code: "KeyJ", repeat: true });
+run.fire("keydown", { code: "KeyJ", repeat: true });
+assert.equal(run("keys.has('KeyJ')"), false);
+run("update(.016)");
+assert.equal(run("shots.length"), 0);
+run.fire("keyup", { code: "KeyJ" });
+run.fire("keydown", { code: "KeyJ" });
+assert.equal(run("keys.has('KeyJ')"), true);
+// Con el foco en un botón (p. ej. «Sonido»), Espacio/Enter no juegan la etapa.
+run = makeGame({ ChankasMap: MAPSTUB, localStorage: memStorage() });
+run("document.querySelector('#start').onclick()");
+const btnTarget = { closest: () => ({}) };
+let pd = false;
+run.fire("keydown", { code: "Space", target: btnTarget, preventDefault: () => (pd = true) });
+run.fire("keydown", { code: "Enter", target: btnTarget });
+assert.equal(run("state"), "map");
+assert.equal(pd, false);
+// Las flechas sí funcionan y P no pausa en el mapa.
+run.fire("keydown", { code: "ArrowRight" });
+run.fire("keydown", { code: "KeyP" });
+assert.equal(run("mapS.selected") + run("state"), "1map");
+// Toque: el primer toque sobre la etapa ya seleccionada no la juega; el segundo sí.
+run.fire("keydown", { code: "ArrowLeft" });
+run("mapPointer(" + RM.stages[0].node + ")");
+assert.equal(run("state"), "map");
+run("mapPointer(" + RM.stages[0].node + ")");
+assert.equal(run("state"), "playing");
+// El botón de la ficha juega la etapa elegida con un solo toque; bloqueada → aviso.
+run = makeGame({ ChankasMap: MAPSTUB, localStorage: memStorage() });
+run("document.querySelector('#start').onclick()");
+assert.equal(RM.buttonAt(790, 455), true);
+assert.equal(RM.buttonAt(790, 300), false);
+run("mapKey('ArrowRight'); mapPointer(790, 455)");
+assert.equal(run("state"), "map");
+assert.ok(run("mapS.msg") > 0);
+run("mapKey('ArrowLeft'); mapPointer(790, 455)");
 assert.equal(run("state"), "playing");
 // Al volver del título, el progreso persiste (nueva partida con el mismo almacenamiento).
 run = makeGame({ ChankasMap: MAPSTUB, localStorage: store });
@@ -480,5 +534,5 @@ run = makeGame({
 run("document.querySelector('#start').onclick()");
 assert.equal(run("state"), "playing");
 console.log(
-  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback).",
+  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques).",
 );
