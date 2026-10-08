@@ -378,7 +378,9 @@ function throwBola() {
     x: player.x + 14,
     y: player.y + 18,
     vx: player.face * 430,
-    vy: -300,
+    vy: -180,
+    w: 16,
+    h: 16,
     life: 1.6,
     good: true,
     damage: 1,
@@ -497,13 +499,19 @@ function update(dt) {
   world.llama += (player.x - 80 - world.llama) * dt * 3;
   world.spit -= dt;
   for (const e of enemies) {
-    if (e.dead || Math.abs(e.x - player.x) > 850) continue;
+    if (e.dead) continue;
+    // Los estados temporales corren aunque el enemigo esté fuera de la ventana de activación.
+    e.stun -= dt;
+    if (Math.abs(e.x - player.x) > 850) {
+      e.wind = 0; // un ataque pendiente no se dispara al volver
+      e.lunge = 0;
+      continue;
+    }
     const dir = player.x > e.x ? 1 : -1;
     const prevX = e.x;
     e.cool -= dt;
     e.animT += dt;
     e.flash -= dt;
-    e.stun -= dt;
     const touching = overlap(player, e);
     if (e.stun > 0) {
       // Aturdido por la boleadora: ni se mueve ni ataca (sí hace daño al tocarlo).
@@ -550,7 +558,7 @@ function update(dt) {
     s.y += s.vy * dt;
     if (s.fire) s.vy += 200 * dt;
     if (s.bola) {
-      s.vy += 900 * dt;
+      s.vy += 700 * dt;
       if (s.y > GROUND - 6) s.life = 0;
     }
     s.life -= dt;
@@ -619,6 +627,12 @@ function updateBoss(e, dir, dt) {
     e.wind -= dt;
     e.face = e.wdir;
     if (e.wind > 0) return;
+    if (!canFire(e)) {
+      // Salió de cámara durante la preparación: se cancela (nunca dispara sin verse).
+      e.cool = 0.4;
+      setAnim(e, "walk");
+      return;
+    }
     const y = e.pat === "high" ? e.y + 22 : e.y + 55;
     spawnFx("muzzle_flash", "burst", e.wdir > 0 ? e.x + e.w + 6 : e.x - 6, y + 4, e.wdir);
     shots.push({

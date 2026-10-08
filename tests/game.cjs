@@ -121,12 +121,21 @@ assert.equal(run("canFire(enemies[1])"), false);
 // …pero sí dispara cuando está a la vista.
 run("A.x=player.x+300; A.home=A.x; A.cool=0; update(.016)");
 assert.ok(run("shots.filter(s=>!s.good).length") >= 1);
-// Fuera de cámara por la derecha (pantalla: cam..cam+960) tampoco.
+// Visibilidad pura (cámara forzada): a 500 px (dentro de alcance) pero fuera por la derecha.
 run(
-  "reset(); enemies.forEach(e=>e.dead=true); A=enemies[1]; A.dead=false; A.x=player.x+700; A.home=A.x; A.cool=0; shots.length=0; update(.016)",
+  "reset(); enemies.forEach(e=>e.dead=true); A=enemies[1]; A.dead=false; player.x=2000; A.x=2500; cam=1500",
 );
+assert.equal(run("Math.abs(A.x + A.w/2 - player.x - player.w/2) < FIRE_RANGE"), true);
 assert.equal(run("canFire(A)"), false);
+run("cam=1600");
+assert.equal(run("canFire(A)"), true);
+// El jefe que sale de cámara durante la preparación cancela el disparo.
+run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var Z=enemies[8]; player.x=2000; player.inv=999;
+  Z.x=1750; Z.home=1750; cam=1720; Z.cool=0; shots.length=0; update(.016)`);
+assert.ok(run("Z.wind") > 0);
+run("for (let i=0;i<60;i++){ player.x += 4; update(.016); }");
 assert.equal(run("shots.filter(s=>!s.good).length"), 0);
+assert.equal(run("Z.wind <= 0"), true);
 
 // P0-3 · Checkpoint: la apacheta se activa al pasar, se revive allí con la manta
 // mínima, invulnerabilidad breve y los enemigos derrotados siguen derrotados.
@@ -185,6 +194,10 @@ run(
 );
 assert.ok(run("ys.length") >= 3);
 assert.ok(run("new Set(ys).size") === 2); // alterna alto y bajo
+assert.deepEqual(
+  JSON.parse(run("JSON.stringify(ys.map(y => y < C.y + 40 ? 'high' : 'low'))")),
+  JSON.parse(run("JSON.stringify(ys.map((_, i) => BOSS_PATTERN[(i + 1) % BOSS_PATTERN.length]))")),
+);
 // Disparo alto: no da al héroe de pie. Disparo bajo: sí (hay que saltarlo).
 assert.ok(run("Math.min(...ys) + 8 <= GROUND - 58"));
 assert.ok(run("Math.max(...ys) >= GROUND - 58"));
@@ -194,7 +207,7 @@ run("reset(); var D=enemies[1]; player.x=D.x-10; player.inv=0; update(.016)");
 assert.equal(run("player.hp"), 5);
 assert.ok(run("player.kb") < 0);
 run("for (let i=0;i<20;i++) update(.016)");
-assert.ok(run("player.x + player.w < D.x || player.inv > 0"));
+assert.ok(run("player.x + player.w < D.x")); // separado de verdad del atacante
 assert.equal(run("player.hp"), 5);
 
 // P1-4 · Sin munición, J golpea con la macana y el jefe es vencible.
@@ -216,20 +229,32 @@ run(`reset(); enemies.forEach(e=>e.dead=true); var P=enemies[0]; P.dead=false; P
   for (let i=0;i<300;i++){ update(.016); if (P.anim==='lunge') lunged=true; }`);
 assert.equal(run("shots.filter(s=>!s.good).length"), 0);
 assert.equal(run("lunged"), true);
-run("player.inv=0; player.hp=6; P.x=player.x; P.lunge=0; update(.016)");
+// La embestida muerde de verdad: el perro sale a distancia y daña durante el 'lunge'.
+run(`reset(); enemies.forEach(e=>e.dead=true); P=enemies[0]; P.dead=false; P.cool=0; player.x=P.x-110; player.inv=0;
+  cam=Math.max(0,player.x-280); var bitLunging=false;
+  for (let i=0;i<120 && player.hp===6;i++){ update(.016); if (player.hp<6) bitLunging = P.anim==='lunge'; }`);
 assert.equal(run("player.hp"), 5);
+assert.equal(run("bitLunging"), true);
 
 // Boleadora: tiro en arco limitado que aturde ('stunned') y frena al enemigo.
 run("reset(); var G=enemies[0]; player.x=G.x-150; player.face=1; player.cool=0; throwBola()");
 assert.equal(run("player.bola"), 2);
 assert.ok(run("shots[0].bola && shots[0].vy < 0"));
-run(
-  "shots.length=0; shots.push({x:G.x+10,y:G.y,vx:400,vy:0,life:1,good:true,damage:1,bola:true}); update(.016)",
-);
+run("player.inv=999; for (let i=0;i<60 && !(G.stun>0);i++) update(.016)"); // tiro real, en arco
 assert.ok(run("G.stun") > 1);
 assert.equal(run("G.anim"), "stunned");
 run("var gx=G.x; for (let i=0;i<30;i++) update(.016)");
 assert.equal(run("G.x"), run("gx"));
+run("for (let i=0;i<120;i++) update(.016)"); // se recupera
+assert.ok(run("G.stun <= 0 && G.anim !== 'stunned'"));
+// El aturdimiento corre aunque el enemigo quede fuera de la ventana de activación.
+run("G.stun=2; player.x=G.x+1000; for (let i=0;i<150;i++){ update(.016); player.x=G.x+1000; }");
+assert.ok(run("G.stun") <= 0);
+// Contra el jefe: aturdimiento corto que cancela la preparación.
+run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var J2=enemies[8]; player.x=3600; player.inv=999; player.face=1;
+  cam=player.x-280; J2.x=3800; J2.wind=.3; J2.pat='low'; J2.cool=5; shots.length=0;
+  shots.push({x:J2.x+10,y:J2.y+30,vx:400,vy:0,life:1,good:true,damage:1,bola:true,w:16,h:16}); update(.016)`);
+assert.ok(run("J2.stun > 0 && J2.stun <= 0.7 && J2.wind === 0"));
 run("player.bola=0; player.cool=0; shots.length=0; throwBola()");
 assert.equal(run("shots.length"), 0);
 
