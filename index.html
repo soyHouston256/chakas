@@ -3,58 +3,280 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#16121A" />
     <title>CHANKAS · Camino de resistencia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Jersey+10&family=Pixelify+Sans:wght@400;500;700&display=swap"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
-    <header>
-      <a href="./">CHANKAS<span>CAMINO DE RESISTENCIA</span></a
-      ><button id="sound">Sonido: no</button>
+  <body data-state="menu">
+    <header class="site-header">
+      <a class="brand" href="./">
+        <svg class="pix" width="40" height="40" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 0h2v2h2v2h2v2H8v2H6v2H4V8H2V6H0V4h2V2h2z" fill="#A8301F"/><path d="M4 2h2v2h2v2H6v2H4V6H2V4h2z" fill="#E9B53B"/><rect x="4" y="4" width="2" height="2" fill="#16121A"/></svg>
+        <span class="brand-text">
+          <span class="brand-name">CHANKAS</span>
+          <span class="brand-sub">CAMINO DE RESISTENCIA</span>
+        </span>
+      </a>
+      <nav class="site-nav" aria-label="Opciones">
+        <button type="button" class="btn notch" id="nav-map" data-action="map" data-needs-map hidden>
+          <svg width="18" height="18" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 1h3v1h3V1h3v8H6V8H3v1H0z" fill="none" stroke="#E9B53B" stroke-width="1"/></svg>
+          Mapa del camino
+        </button>
+        <button type="button" class="btn notch" id="sound" aria-pressed="false">
+          <svg width="18" height="18" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 3h2l3-3v9L2 6H0z" fill="#F2E6CC"/><path class="snd-off" d="M6 3h1v1H6zM8 3h1v1H8zM7 4h1v1H7zM6 5h1v1H6zM8 5h1v1H8z" fill="#D8432F"/><path class="snd-on" d="M6 3h1v3H6zM8 2h1v5H8z" fill="#E9B53B"/></svg>
+          <span>Sonido: <span data-sound-label>no</span></span>
+        </button>
+      </nav>
     </header>
-    <main>
+    <div class="tocapu" aria-hidden="true"></div>
+
+    <main class="page">
       <div class="intro">
-        <span>PRIMERA EXPEDICIÓN / 1536</span>
-        <h1>Una piedra puede cambiar el camino.</h1>
+        <div class="intro-head">
+          <span class="eyebrow">PRIMERA EXPEDICIÓN · AÑO 1536</span>
+          <h1>Una piedra puede cambiar el camino.</h1>
+        </div>
         <p>Recorre los andenes, abastece tu manta y abre paso junto a tu llama.</p>
       </div>
-      <div class="stage">
-        <canvas
-          id="game"
-          width="960"
-          height="540"
-          aria-label="Juego de acción lateral Chankas"
-        ></canvas>
-        <div id="overlay">
-          <span>QHAPAQ ÑAN · NIVEL 01</span>
-          <h2 id="title">El paso de los andenes</h2>
-          <p id="message">
-            La huaraca, tu manta y una compañera fiel. Llega al final del camino y derrota al
-            capitán de la expedición.
-          </p>
-          <button id="start">Comenzar expedición →</button>
-          <button id="restart" class="secondary" hidden>Empezar de nuevo</button>
+
+      <section class="game notch" id="game-section" aria-label="Juego">
+        <div class="hud" id="hud">
+          <div class="hud-block">
+            <span class="hud-label" aria-hidden="true">VIDA</span>
+            <div class="hearts" id="hud-hearts" role="img" aria-label="Vida: 6 de 6"></div>
+          </div>
+          <div class="weapons" role="group" aria-label="Armas">
+            <div class="weapon is-selected" data-weapon="J" aria-current="true">
+              <kbd>J</kbd>
+              <svg width="24" height="18" viewBox="0 0 8 6" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 0h4v1h1v1h1v3H7v1H1V5H0V2h1V1h1z" fill="#9C948A"/><path d="M2 1h2v1H2zM1 2h1v1H1z" fill="#D9D2C5"/></svg>
+              <span class="weapon-text">
+                <span class="weapon-name">HUARACA</span>
+                <span class="weapon-count"><span id="hud-ammo">24</span><span class="dim">/<span id="hud-ammo-max">24</span></span></span>
+              </span>
+            </div>
+            <div class="weapon" data-weapon="K">
+              <kbd>K</kbd>
+              <svg width="21" height="27" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h1v2h1v1h1v1h1v3H6v1H5v1H2V8H1V7H0V4h1V3h1V1h1z" fill="#E9732B"/><rect x="2" y="5" width="3" height="3" fill="#E9B53B"/></svg>
+              <span class="weapon-text">
+                <span class="weapon-name">FUEGO</span>
+                <span class="weapon-count" id="hud-fire">5</span>
+              </span>
+            </div>
+            <div class="weapon" data-weapon="L">
+              <kbd>L</kbd>
+              <svg width="24" height="24" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><rect x="4" y="2" width="1" height="3" fill="#DCCFB4"/><rect x="2" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="5" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="3" y="0" width="3" height="2" fill="#C9A26B"/><rect x="0" y="6" width="3" height="3" fill="#C9A26B"/><rect x="6" y="6" width="3" height="3" fill="#C9A26B"/></svg>
+              <span class="weapon-text">
+                <span class="weapon-name">BOLAS</span>
+                <span class="weapon-count" id="hud-bola">3</span>
+              </span>
+            </div>
+          </div>
+          <div class="hud-block">
+            <span class="hud-label" aria-hidden="true">CARGA DE LA LLAMA</span>
+            <div class="pips" id="hud-loads" role="img" aria-label="Carga de la llama: 5 de 5"></div>
+          </div>
+          <div class="hud-block hud-quipu">
+            <span class="hud-label">QUIPU</span>
+            <span class="quipu" id="hud-quipu">0000</span>
+          </div>
         </div>
-      </div>
-      <div class="controls">
-        <span><b>A D / ← →</b> caminar</span><span><b>Espacio / ↑</b> saltar</span
-        ><span><b>J</b> huaraca</span><span><b>K</b> piedra incendiaria</span
-        ><span><b>L</b> boleadora</span><span><b>E</b> recargar</span><span><b>P</b> pausa</span><span><b>Enter / J</b> jugar etapa en el mapa</span>
-      </div>
-      <div class="touch">
-        <button data-key="ArrowLeft">◀</button><button data-key="ArrowRight">▶</button
-        ><button data-key="Space">Saltar</button><button data-key="KeyJ">Huaraca</button
-        ><button data-key="KeyK">Fuego</button><button data-key="KeyL">Bola</button
-        ><button data-key="KeyE">Recargar</button>
-      </div>
-      <footer>
-        Historia alternativa inspirada en la resistencia andina. Personajes ficticios, arte y
-        sonidos originales. Prototipo v0.1.
+        <div class="tocapu tocapu-sm" aria-hidden="true"></div>
+
+        <div class="stage" id="stage" data-state="menu">
+          <canvas
+            id="game"
+            width="960"
+            height="540"
+            aria-label="Juego de acción lateral Chankas"
+          ></canvas>
+
+          <section class="screen title-screen" id="title-screen" aria-labelledby="title-logo">
+            <div class="title-panel">
+              <div class="title-head">
+                <span class="eyebrow">HISTORIA ALTERNATIVA · 1536</span>
+                <h2 class="title-logo" id="title-logo">CHANKAS</h2>
+                <span class="sub">CAMINO DE RESISTENCIA</span>
+              </div>
+              <nav class="menu" aria-label="Menú principal">
+                <button type="button" class="menu-item is-current" data-action="start">
+                  <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                  Comenzar expedición
+                </button>
+                <button type="button" class="menu-item" data-action="map" data-needs-map hidden>
+                  <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                  Continuar camino
+                </button>
+                <button type="button" class="menu-item menu-sound" data-action="sound" aria-pressed="false">
+                  <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                  Sonido <span class="value" data-sound-label>no</span>
+                </button>
+              </nav>
+              <div class="title-foot">
+                <span class="keys-hint"><kbd>↑</kbd><kbd>↓</kbd> elegir <kbd>ENTER</kbd> aceptar</span>
+                <span>Personajes ficticios, arte y sonidos originales. v0.1</span>
+              </div>
+            </div>
+            <div class="tocapu-v" aria-hidden="true"></div>
+          </section>
+
+          <section class="screen pause-screen" id="pause-screen" role="dialog" aria-labelledby="pause-heading">
+            <div class="pause-box notch-gold">
+              <div class="tocapu" aria-hidden="true"></div>
+              <div class="pause-grid">
+                <div class="pause-menu">
+                  <h2 class="pause-heading" id="pause-heading">PAUSA</h2>
+                  <nav class="menu" aria-label="Menú de pausa">
+                    <button type="button" class="menu-item is-current" data-action="resume">
+                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                      Continuar
+                    </button>
+                    <button type="button" class="menu-item" data-action="restart">
+                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                      Reiniciar etapa
+                    </button>
+                    <button type="button" class="menu-item" data-action="map" data-needs-map hidden>
+                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                      Mapa del camino
+                    </button>
+                    <button type="button" class="menu-item menu-sound" data-action="sound" aria-pressed="false">
+                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                      Sonido <span class="value" data-sound-label>no</span>
+                    </button>
+                    <button type="button" class="menu-item menu-quiet" data-action="title">
+                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                      Salir al título
+                    </button>
+                  </nav>
+                </div>
+                <div class="pause-info">
+                  <div class="pause-top">
+                    <div class="stack">
+                      <span class="label" id="pause-stage">ETAPA I DE V</span>
+                      <span class="pause-stage-name" id="pause-stage-name">Sacsayhuamán</span>
+                    </div>
+                    <div class="stack end">
+                      <span class="label">QUIPU</span>
+                      <span class="quipu" id="pause-quipu">0000</span>
+                    </div>
+                  </div>
+                  <h3 class="label">LO QUE LLEVAS EN LA MANTA</h3>
+                  <ul class="inventory">
+                    <li>
+                      <svg width="40" height="30" viewBox="0 0 8 6" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 0h4v1h1v1h1v3H7v1H1V5H0V2h1V1h1z" fill="#9C948A"/><path d="M2 1h2v1H2zM1 2h1v1H1z" fill="#D9D2C5"/></svg>
+                      <span>Piedras</span>
+                      <span class="inv-count"><span id="pause-ammo">24</span><span class="dim">/24</span></span>
+                      <kbd>J</kbd>
+                    </li>
+                    <li>
+                      <svg width="28" height="36" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h1v2h1v1h1v1h1v3H6v1H5v1H2V8H1V7H0V4h1V3h1V1h1z" fill="#E9732B"/><rect x="2" y="5" width="3" height="3" fill="#E9B53B"/></svg>
+                      <span>Piedras de fuego</span>
+                      <span class="inv-count" id="pause-fire">5</span>
+                      <kbd>K</kbd>
+                    </li>
+                    <li>
+                      <svg width="36" height="36" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><rect x="4" y="2" width="1" height="3" fill="#DCCFB4"/><rect x="2" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="5" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="3" y="0" width="3" height="2" fill="#C9A26B"/><rect x="0" y="6" width="3" height="3" fill="#C9A26B"/><rect x="6" y="6" width="3" height="3" fill="#C9A26B"/></svg>
+                      <span>Boleadoras</span>
+                      <span class="inv-count" id="pause-bola">3</span>
+                      <kbd>L</kbd>
+                    </li>
+                  </ul>
+                  <p class="pause-hint">
+                    Acércate a tu llama y pulsa <kbd>E</kbd> para recargar piedras. Su carga baja con
+                    cada recarga (<span id="pause-loads">5 de 5</span>) y se repone en cada apacheta.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="screen result-screen" id="overlay" role="dialog" aria-labelledby="title" style="display: none">
+            <div class="result-box notch-gold">
+              <span class="eyebrow">QHAPAQ ÑAN · NIVEL 01</span>
+              <h2 id="title">El paso de los andenes</h2>
+              <p id="message">
+                La huaraca, tu manta y una compañera fiel. Llega al final del camino y derrota al
+                capitán de la expedición.
+              </p>
+              <div class="result-actions">
+                <button type="button" class="btn-primary" id="start">Comenzar expedición →</button>
+                <button type="button" class="btn-secondary" id="restart" hidden>Empezar de nuevo</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="map-cartouche" aria-hidden="true">
+            <span class="map-cartouche-title">QHAPAQ ÑAN</span>
+            <span class="label">CAMINO DE LA RESISTENCIA · 1536</span>
+          </div>
+          <aside class="map-panel" id="map-panel" aria-labelledby="mp-heading">
+            <div class="mp-head">
+              <h2 class="label" id="mp-heading">LAS CINCO CUERDAS</h2>
+              <p>Cada etapa es una cuerda del quipu.</p>
+            </div>
+            <ol class="mp-list" id="mp-list"></ol>
+            <div class="mp-text">
+              <h3 class="label gold">HISTORIA</h3>
+              <p id="mp-history"></p>
+              <h3 class="label fiction">FICCIÓN</h3>
+              <p id="mp-fiction" class="muted"></p>
+            </div>
+            <button type="button" class="mp-play" id="mp-play" data-action="play">
+              <kbd>ENTER</kbd><span id="mp-play-label">Jugar etapa I</span>
+            </button>
+            <p class="mp-hint"><kbd>↑</kbd><kbd>↓</kbd> elegir etapa · clic o toque</p>
+            <p class="mp-notice" id="mp-notice" role="status" aria-live="polite"></p>
+          </aside>
+        </div>
+
+        <div class="touch" aria-label="Controles táctiles" role="group">
+          <button type="button" data-key="ArrowLeft" aria-label="Caminar a la izquierda">◀</button
+          ><button type="button" data-key="ArrowRight" aria-label="Caminar a la derecha">▶</button
+          ><button type="button" data-key="Space">Saltar</button
+          ><button type="button" data-key="KeyJ">Huaraca</button
+          ><button type="button" data-key="KeyK">Fuego</button
+          ><button type="button" data-key="KeyL">Bola</button
+          ><button type="button" data-key="KeyE">Recargar</button>
+        </div>
+
+        <div class="route" id="route" role="group" aria-label="Ruta del Qhapaq Ñan">
+          <div class="route-line" aria-hidden="true"></div>
+          <div class="route-fill" id="route-fill" aria-hidden="true"></div>
+          <div class="route-marker" id="route-marker" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 10 10" shape-rendering="crispEdges"><path d="M4 0h2v2h2v2h2v2H8v2H6v2H4V8H2V6H0V4h2V2h2z" fill="#E9B53B"/><rect x="4" y="4" width="2" height="2" fill="#16121A"/></svg>
+          </div>
+          <span class="route-pct" id="route-pct" aria-hidden="true">0%</span>
+          <ol class="route-stages" id="route-stages"></ol>
+          <p class="sr-only" id="route-sr"></p>
+        </div>
+      </section>
+
+      <section class="controls" aria-label="Controles">
+        <span class="ctl"><kbd>A</kbd><kbd>D</kbd><span>caminar</span></span>
+        <span class="ctl"><kbd>ESPACIO</kbd><span>saltar</span></span>
+        <span class="ctl"><kbd>J</kbd><span>huaraca</span></span>
+        <span class="ctl"><kbd>K</kbd><span>piedra incendiaria</span></span>
+        <span class="ctl"><kbd>L</kbd><span>boleadora</span></span>
+        <span class="ctl"><kbd>E</kbd><span>recargar</span></span>
+        <span class="ctl"><kbd>P</kbd><span>pausa</span></span>
+        <span class="ctl"><kbd>ENTER</kbd><span>jugar etapa</span></span>
+        <span class="ctl ctl-alt">También: flechas para caminar y elegir, <kbd>↑</kbd> o <kbd>W</kbd> saltar, <kbd>ESC</kbd> pausa.</span>
+      </section>
+
+      <footer class="site-footer">
+        <span>Historia alternativa inspirada en la resistencia andina. Personajes ficticios, arte y sonidos originales.</span>
+        <span>Prototipo v0.1</span>
       </footer>
     </main>
     <script src="art/sprites.js"></script>
     <script src="art/background.js"></script>
     <script src="art/peru-data.js"></script>
     <script src="art/map.js"></script>
+    <script src="ui.js"></script>
     <script src="game.js"></script>
   </body>
 </html>
