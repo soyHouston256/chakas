@@ -370,14 +370,14 @@ kbd {
   object-fit: cover;
   transition: filter 0.2s;
 }
-.stage[data-state="menu"] > canvas {
+.has-ui .stage[data-state="menu"] > canvas {
   filter: brightness(0.55) saturate(0.85);
 }
-.stage[data-state="paused"] > canvas {
+.has-ui .stage[data-state="paused"] > canvas {
   filter: brightness(0.35) saturate(0.6);
 }
-.stage[data-state="lost"] > canvas,
-.stage[data-state="won"] > canvas {
+.has-ui .stage[data-state="lost"] > canvas,
+.has-ui .stage[data-state="won"] > canvas {
   filter: brightness(0.45) saturate(0.75);
 }
 .screen {
@@ -434,6 +434,22 @@ kbd {
 }
 .menu-quiet {
   color: var(--muted);
+}
+/* Sobre cochinilla, el texto atenuado no llega a 4.5:1: se usa crema (≈5.5:1). */
+.menu-item.is-current,
+.menu-item.is-current .value {
+  color: var(--cream);
+}
+/* Sin ui.js (fallback) solo quedan el canvas, la tarjeta clásica y los controles. */
+body:not(.has-ui) .hud,
+body:not(.has-ui) .tocapu-sm,
+body:not(.has-ui) .screen:not(#overlay),
+body:not(.has-ui) .map-cartouche,
+body:not(.has-ui) .map-panel,
+body:not(.has-ui) .route,
+body:not(.has-ui) .touch-pause,
+body:not(.has-ui) [data-action] {
+  display: none !important;
 }
 
 /* Título */
@@ -824,23 +840,25 @@ kbd {
     right: 0;
     bottom: 0;
     width: calc(100% / 3);
-    padding: 20px 22px 16px 38px;
-    gap: 12px;
+    padding: 16px 22px 14px 38px;
+    gap: 10px;
     background:
       var(--tocapu-v) repeat-y left top / 16px 32px,
       var(--ground);
     overflow-y: auto;
   }
   .mp-list {
-    gap: 2px;
+    gap: 0;
+  }
+  .mp-head p {
+    font-size: 14px;
   }
   .mp-text {
-    gap: 6px;
+    gap: 4px;
   }
-  @media (pointer: fine) {
-    .mp-row {
-      min-height: 36px;
-    }
+  .mp-text p {
+    font-size: 14.5px;
+    line-height: 1.4;
   }
 }
 

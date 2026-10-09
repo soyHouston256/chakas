@@ -175,13 +175,25 @@
   function onState(s, prev) {
     stage.dataset.state = s;
     el.body.dataset.state = s;
+    // Pausa y derrota/victoria son modales: la cabecera queda inerte (sin foco ni clic).
+    const modal = s === "paused" || s === "lost" || s === "won";
+    if (el.header) el.header.inert = modal;
     if (prev === undefined) return; // primera carga: no se roba el foco a la página
     const box = activeScreen(s);
     let target = null;
     if (box) {
       target = box.querySelector(".menu-item") || box.querySelector("button:not([hidden])");
       setCurrent(box, target);
-    } else if (s === "map") target = el.mpPlay;
+    } else if (s === "map") {
+      // Foco en la etapa elegida (Enter sobre ella la juega); en móvil se desplaza a la vista.
+      const row = rows[last.mSel] || rows[0];
+      target = row ? row.button : el.mpPlay;
+      if (target && target.focus) {
+        target.focus({ preventScroll: true });
+        if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
+        target = null;
+      }
+    }
     if (target) focusQuiet(target);
     else if (s === "playing") {
       // Jugando: el foco no se queda en un botón (Espacio = saltar, no «pulsar»).
@@ -277,6 +289,7 @@
     ready: true,
     init(a) {
       api = a;
+      el.body.classList.add("has-ui"); // activa las capas HTML (sin ui.js quedan ocultas)
       const v = api.view();
       build(v);
       put("state", v.state, (s) => onState(s, undefined));
@@ -301,12 +314,12 @@
       if (!api) return;
       const v = api.view();
       const prev = last.state;
+      if (v.map) syncMap(v.map);
+      if (v.state === "paused") syncPause(v);
       put("state", v.state, (s) => onState(s, prev));
       syncHud(v.hud);
       syncRoute(v.route, v.stageNames);
       syncSound(v.sound);
-      if (v.state === "paused") syncPause(v);
-      if (v.map) syncMap(v.map);
     },
     menuKey(code) {
       const box = activeScreen(last.state);

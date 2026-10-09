@@ -286,6 +286,7 @@ function toggleSound() {
 function pause() {
   if (state === "playing") {
     state = "paused";
+    holdKeys();
     if (!UI) show("Un respiro en el camino", "Tu expedición te espera.", "Continuar →");
   } else if (state === "paused") {
     state = "playing";
@@ -312,17 +313,18 @@ addEventListener("keydown", (e) => {
       if (mapKey(e.code)) {
         e.preventDefault();
         swallowed.add(e.code);
+        if (UI) UI.sync(); // el foco sigue a la etapa ya, no en el próximo frame
       }
     } else if (swallowed.has(e.code)) e.preventDefault();
     return;
   }
+  // Enter/Espacio sobre un botón enfocado activan solo ese botón (también jugando).
+  if (onControl(e) && ACTIVATE.includes(e.code)) {
+    if (!e.repeat) swallowed.add(e.code);
+    else e.preventDefault();
+    return;
+  }
   if (state !== "playing") {
-    // Título, pausa, derrota, victoria: Enter/Espacio sobre un botón activan solo ese botón.
-    if (onControl(e) && ACTIVATE.includes(e.code)) {
-      if (!e.repeat) swallowed.add(e.code);
-      else e.preventDefault();
-      return;
-    }
     if (state === "paused" && (e.code === "KeyP" || e.code === "Escape")) {
       e.preventDefault();
       if (!e.repeat) pause();
@@ -334,6 +336,12 @@ addEventListener("keydown", (e) => {
       swallowed.add(e.code);
       return;
     }
+    // Fuera del juego ninguna tecla llega a `keys`: queda retenida hasta soltarla, así una
+    // tecla mantenida en un menú no dispara ni salta al empezar o reanudar.
+    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
+      e.preventDefault();
+    swallowed.add(e.code);
+    return;
   }
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
     e.preventDefault();
@@ -344,6 +352,11 @@ addEventListener("keydown", (e) => {
   }
   keys.add(e.code);
 });
+// Al salir de «playing», las teclas pulsadas pasan a retenidas (no se reactivan al volver).
+function holdKeys() {
+  for (const k of keys) swallowed.add(k);
+  keys.clear();
+}
 addEventListener("keyup", (e) => {
   swallowed.delete(e.code);
   keys.delete(e.code);
@@ -357,6 +370,7 @@ document.querySelectorAll("[data-key]").forEach((b) => {
   b.onpointerdown = (e) => {
     e.preventDefault();
     if (state === "map") return void mapKey(b.dataset.key);
+    if (state !== "playing") return; // en menús, los toques no se acumulan como teclas
     b.setPointerCapture(e.pointerId);
     keys.add(b.dataset.key);
   };
@@ -397,6 +411,7 @@ function hit(srcX, push = 260) {
 function resolveDeath() {
   if (state !== "playing" || player.hp > 0) return;
   state = "lost";
+  holdKeys();
   show(
     "El camino aún te necesita",
     "Vuelves a la última apacheta con piedras de reserva. Los caídos no se levantan.",
@@ -406,6 +421,7 @@ function resolveDeath() {
 }
 function win() {
   state = "won";
+  holdKeys();
   const withMap = mapReady();
   if (withMap) saveProgress(Math.max(mapS.progress, 1));
   show(
@@ -1216,7 +1232,7 @@ function openMap(afterWin = false) {
   mapS.msg = 0;
   mapS.armed = -1;
   state = "map";
-  keys.clear();
+  holdKeys();
   overlay.style.display = "none";
   restartBtn.hidden = true;
   return true;
@@ -1423,7 +1439,7 @@ function goTitle() {
   particles = [];
   fx = [];
   cam = 0;
-  keys.clear();
+  holdKeys();
   mapS.walk = null;
   overlay.style.display = "none";
   restartBtn.hidden = true;
@@ -1440,6 +1456,10 @@ function uiAction(name, arg) {
     case "map":
       if (state === "map") return false;
       return openMap(state === "won");
+    case "pause": // botón táctil
+      if (state !== "playing" && state !== "paused") return false;
+      pause();
+      return true;
     case "resume":
       if (state !== "paused") return false;
       pause();
@@ -1456,7 +1476,9 @@ function uiAction(name, arg) {
     case "select": {
       if (state !== "map") return false;
       const i = Math.floor(clampN(arg, 0, stageCount() - 1));
-      if (i !== mapS.selected) tone(520);
+      // Elegir la etapa ya elegida la juega (como el segundo toque en el canvas).
+      if (i === mapS.selected) return playStage(i);
+      tone(520);
       mapS.selected = i;
       mapS.armed = -1;
       return true;
@@ -1466,10 +1488,14 @@ function uiAction(name, arg) {
   }
   return false;
 }
+const REDUCED_MOTION =
+  typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.033);
   last = t;
-  renderT += dt;
+  // prefers-reduced-motion: fuera del juego (título, pausa, mapa) se congelan las
+  // animaciones decorativas del escenario; jugando siguen, son información de juego.
+  if (state === "playing" || !REDUCED_MOTION || !REDUCED_MOTION.matches) renderT += dt;
   if (state === "map") {
     updateMap(dt);
     drawMap();

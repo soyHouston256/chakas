@@ -124,7 +124,7 @@
             <div class="tocapu-v" aria-hidden="true"></div>
           </section>
 
-          <section class="screen pause-screen" id="pause-screen" role="dialog" aria-labelledby="pause-heading">
+          <section class="screen pause-screen" id="pause-screen" role="dialog" aria-modal="true" aria-labelledby="pause-heading">
             <div class="pause-box notch-gold">
               <div class="tocapu" aria-hidden="true"></div>
               <div class="pause-grid">
@@ -194,7 +194,7 @@
             </div>
           </section>
 
-          <div class="screen result-screen" id="overlay" role="dialog" aria-labelledby="title" style="display: none">
+          <div class="screen result-screen" id="overlay" role="dialog" aria-modal="true" aria-labelledby="title" style="display: none">
             <div class="result-box notch-gold">
               <span class="eyebrow">QHAPAQ ÑAN · NIVEL 01</span>
               <h2 id="title">El paso de los andenes</h2>
@@ -234,13 +234,14 @@
         </div>
 
         <div class="touch" aria-label="Controles táctiles" role="group">
-          <button type="button" data-key="ArrowLeft" aria-label="Caminar a la izquierda">◀</button
-          ><button type="button" data-key="ArrowRight" aria-label="Caminar a la derecha">▶</button
-          ><button type="button" data-key="Space">Saltar</button
-          ><button type="button" data-key="KeyJ">Huaraca</button
-          ><button type="button" data-key="KeyK">Fuego</button
-          ><button type="button" data-key="KeyL">Bola</button
-          ><button type="button" data-key="KeyE">Recargar</button>
+          <button type="button" tabindex="-1" data-key="ArrowLeft" aria-label="Caminar a la izquierda">◀</button
+          ><button type="button" tabindex="-1" data-key="ArrowRight" aria-label="Caminar a la derecha">▶</button
+          ><button type="button" tabindex="-1" data-key="Space">Saltar</button
+          ><button type="button" tabindex="-1" data-key="KeyJ">Huaraca</button
+          ><button type="button" tabindex="-1" data-key="KeyK">Fuego</button
+          ><button type="button" tabindex="-1" data-key="KeyL">Bola</button
+          ><button type="button" tabindex="-1" data-key="KeyE">Recargar</button
+          ><button type="button" tabindex="-1" data-action="pause" class="touch-pause">Pausa</button>
         </div>
 
         <div class="route" id="route" role="group" aria-label="Ruta del Qhapaq Ñan">

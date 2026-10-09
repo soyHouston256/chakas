@@ -646,7 +646,12 @@ run("uiAction('resume')"); // lo que haría el clic del botón «Continuar»
 run.fire("keydown", { code: "Enter", repeat: true });
 assert.deepEqual(J("[state, keys.has('Enter')]"), ["playing", false]); // la repetición no se filtra
 run.fire("keyup", { code: "Enter" });
-run.fire("keydown", { code: "Space", target: btnTarget }); // jugando, Espacio siempre es saltar
+// Jugando, Espacio sobre un botón enfocado (p. ej. «Sonido») activa el botón y no salta.
+pd = false;
+run.fire("keydown", { code: "Space", target: btnTarget, preventDefault: () => (pd = true) });
+assert.deepEqual([run("keys.has('Space')"), pd], [false, false]);
+run.fire("keyup", { code: "Space" });
+run.fire("keydown", { code: "Space" }); // sin foco en un control, Espacio salta
 assert.equal(run("keys.has('Space')"), true);
 run.fire("keyup", { code: "Space" });
 run.fire("keydown", { code: "KeyP" });
@@ -660,6 +665,27 @@ assert.deepEqual(J("[state, player.x]"), ["playing", 70]);
 run("pause(); uiAction('title')");
 assert.deepEqual(J("[state, player, uiView().hud.ammo]"), ["menu", null, 24]);
 run("draw()"); // el título dibuja el escenario sin jugador
+// Una tecla mantenida en el título no dispara al empezar con «Comenzar expedición».
+run.fire("keydown", { code: "KeyJ" });
+assert.equal(run("keys.has('KeyJ')"), false);
+run("uiAction('start'); update(.016)");
+assert.deepEqual(J("[state, shots.length, player.ammo]"), ["playing", 0, 24]);
+run.fire("keydown", { code: "KeyJ", repeat: true });
+assert.equal(run("keys.has('KeyJ')"), false);
+run.fire("keyup", { code: "KeyJ" });
+// Una tecla pulsada al pausar no sigue activa al reanudar (hasta soltarla y volver a pulsar).
+run.fire("keydown", { code: "ArrowRight" });
+run.fire("keydown", { code: "KeyP" });
+run.fire("keyup", { code: "KeyP" });
+run("uiAction('resume')");
+assert.equal(run("keys.has('ArrowRight')"), false);
+run.fire("keyup", { code: "ArrowRight" });
+run.fire("keydown", { code: "ArrowRight" });
+assert.equal(run("keys.has('ArrowRight')"), true);
+run.fire("keyup", { code: "ArrowRight" });
+assert.equal(run("uiAction('pause')"), true); // botón táctil de pausa
+assert.equal(run("state"), "paused");
+run("uiAction('title')");
 // Mapa: panel «Las cinco cuerdas» (la ficha del canvas se omite) y selección por arriba/abajo.
 assert.equal(run("uiAction('map')"), true);
 assert.equal(run("state"), "map");
@@ -687,8 +713,11 @@ run("uiAction('select', 99)");
 assert.equal(run("mapS.selected"), 4);
 run("mapPointer(790, 455)"); // el antiguo botón de la ficha ya no existe con el panel HTML
 assert.equal(run("state"), "map");
+run("uiAction('select', 4)"); // elegir la ya elegida la juega: bloqueada → aviso
+assert.equal(run("state"), "map");
 run("uiAction('select', 0)");
-assert.equal(run("uiAction('play')"), true);
+assert.equal(run("state"), "map");
+assert.equal(run("uiAction('select', 0)"), true); // segunda vez (Enter/toque sobre la fila) → juega
 assert.equal(run("state"), "playing");
 run("win()");
 assert.equal(run("state"), "won");
