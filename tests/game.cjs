@@ -533,6 +533,174 @@ run = makeGame({
 });
 run("document.querySelector('#start').onclick()");
 assert.equal(run("state"), "playing");
+
+// ---------------------------------------------------------------------------
+// Interfaz v2: modelos de vista puros (HUD, ruta, panel del mapa).
+run = makeGame();
+const J = (code) => JSON.parse(run("JSON.stringify(" + code + ")"));
+let hv = J("hudView(null, null, 0)"); // título: aún no hay partida
+assert.deepEqual(
+  [hv.hp, hv.maxHp, hv.ammo, hv.maxAmmo, hv.fire, hv.bola, hv.loads, hv.maxLoads, hv.quipu, hv.weapon],
+  [6, 6, 24, 24, 5, 3, 5, 5, "0000", "J"],
+);
+assert.equal(hv.lifeLabel, "Vida: 6 de 6");
+run("reset(); enemies.forEach(e=>e.dead=true); player.hp=5; score=100; world.loads=4; player.cool=0; shoot(true)");
+hv = J("hudView(player, world, score)");
+assert.deepEqual([hv.hp, hv.ammo, hv.fire, hv.weapon, hv.quipu, hv.loads], [5, 23, 4, "K", "0100", 4]);
+assert.equal(hv.lifeLabel, "Vida: 5 de 6");
+assert.equal(hv.loadLabel, "Carga de la llama: 4 de 5");
+run("player.cool=0; throwBola()");
+assert.equal(J("hudView(player, world, score)").weapon, "L");
+run("player.cool=0; player.ammo=0; shoot(false)"); // macana = J
+assert.equal(J("hudView(player, world, score)").weapon, "J");
+assert.equal(J("hudView({hp:-3}, {loads:9}, -5)").hp, 0);
+assert.equal(J("hudView({hp:99}, {loads:9}, 0)").hp, 6);
+assert.equal(J("hudView({hp:2}, {loads:9}, 0)").loads, 5);
+assert.equal(run("quipu(12345)"), "12345");
+assert.equal(run("quipu('x')"), "0000");
+// Barra de ruta: 5 columnas (centros 10 %, 30 %…, 90 %); el marcador avanza hacia la siguiente etapa.
+let rv = J("routeView(0, 6, 5)");
+assert.deepEqual([rv.start, rv.end, rv.pct, rv.marker, rv.fill, rv.roman], [10, 90, 6, 11.2, 1.2, "I"]);
+rv = J("routeView(0, 150, 5)");
+assert.deepEqual([rv.pct, rv.marker, rv.fill], [100, 30, 20]);
+rv = J("routeView(4, 50, 5)"); // última etapa: no hay siguiente
+assert.deepEqual([rv.marker, rv.roman], [90, "V"]);
+rv = J("routeView(-2, NaN, 5)");
+assert.deepEqual([rv.stage, rv.pct, rv.marker], [0, 0, 10]);
+rv = J("routeView(7, 50, 1)"); // sin mapa: una sola etapa centrada
+assert.deepEqual([rv.stage, rv.start, rv.marker], [0, 50, 50]);
+
+// Alforjas de la llama: E junto a la llama (lejos de una apacheta) da +8 piedras y gasta una carga;
+// mantener E no vacía las alforjas; con tope de 24; las cargas se reponen en una apacheta nueva.
+run(`reset(); enemies.forEach(e=>e.dead=true); player.x=1200; world.llama=1120; player.ammo=3; world.loads=2;
+  keys.add('KeyE'); update(.016)`);
+assert.deepEqual(J("[player.ammo, world.loads]"), [11, 1]);
+run("update(.016); update(.016)"); // E sigue pulsada: no repite
+assert.deepEqual(J("[player.ammo, world.loads]"), [11, 1]);
+run("keys.delete('KeyE'); update(.016); keys.add('KeyE'); update(.016)");
+assert.deepEqual(J("[player.ammo, world.loads]"), [19, 0]);
+run("keys.delete('KeyE'); update(.016); keys.add('KeyE'); update(.016)"); // sin cargas
+assert.deepEqual(J("[player.ammo, world.loads]"), [19, 0]);
+run("keys.clear(); update(.016); world.loads=3; player.ammo=20; keys.add('KeyE'); update(.016)");
+assert.deepEqual(J("[player.ammo, world.loads]"), [24, 2]); // tope
+run("keys.clear(); update(.016); player.ammo=24; keys.add('KeyE'); update(.016)");
+assert.equal(run("world.loads"), 2); // manta llena: no gasta carga
+run("keys.clear(); update(.016); world.llama=player.x-400; player.ammo=5; keys.add('KeyE'); update(.016)");
+assert.deepEqual(J("[player.ammo, world.loads]"), [5, 2]); // llama lejos
+run("keys.clear(); player.x=1600; world.loads=0; update(.016)");
+assert.deepEqual(J("[world.cpPile, world.loads]"), [2, 5]); // apacheta nueva repone las alforjas
+run("player.x=1600; world.loads=1; player.ammo=0; keys.add('KeyE'); update(.016); keys.clear()");
+assert.deepEqual(J("[player.ammo, world.loads]"), [24, 1]); // en la apacheta recarga ella, no la llama
+run("player.x=1200; world.llama=1120; player.ammo=3; world.loads=2");
+assert.equal(run("llamaPromptVisible()"), true);
+run("player.ammo=20");
+assert.equal(run("llamaPromptVisible()"), false); // la recarga apenas serviría
+run("player.ammo=3; world.loads=0");
+assert.equal(run("llamaPromptVisible()"), false);
+
+// Interfaz HTML presente (stub de ChankasUI): estado del juego → pantallas y acciones.
+let lastMapOpts = null;
+const UISTUB = {
+  ready: true,
+  inits: 0,
+  syncs: 0,
+  menuCodes: [],
+  init(api) {
+    this.api = api;
+    this.inits++;
+  },
+  sync() {
+    this.syncs++;
+  },
+  menuKey(code) {
+    this.menuCodes.push(code);
+    return code === "ArrowDown" || code === "ArrowUp";
+  },
+};
+run = makeGame({
+  ChankasUI: UISTUB,
+  ChankasMap: { ...MAPSTUB, draw: (c, t, o) => ((lastMapOpts = o), true) },
+  localStorage: memStorage(),
+});
+assert.equal(UISTUB.inits, 1);
+assert.notEqual(run("overlay.style.display"), "flex"); // el título es HTML, no la tarjeta clásica
+let uv = J("uiView()");
+assert.deepEqual([uv.state, uv.hasMap, uv.map, uv.stageNames.length, uv.hud.hp], ["menu", true, null, 5, 6]);
+assert.equal(run("uiAction('resume')"), false); // no hay nada que reanudar en el título
+assert.equal(run("uiAction('start')"), true);
+assert.deepEqual(J("[state, curStage]"), ["playing", 0]);
+run("for (let i = 0; i < 5; i++) { update(.016); draw(); }"); // sin HUD de canvas, sin errores
+// Escape/P pausan; en la pausa, las flechas van al menú y Enter/Espacio sobre un botón no llegan al juego.
+pd = false;
+run.fire("keydown", { code: "Escape" });
+assert.equal(run("state"), "paused");
+assert.equal(run("keys.has('Escape')"), false);
+run.fire("keydown", { code: "ArrowDown" });
+assert.deepEqual(UISTUB.menuCodes.slice(-1), ["ArrowDown"]);
+assert.equal(run("swallowed.has('ArrowDown')"), true);
+run.fire("keyup", { code: "ArrowDown" });
+run.fire("keydown", { code: "Enter", target: btnTarget, preventDefault: () => (pd = true) });
+assert.equal(pd, false); // el navegador activa el botón enfocado
+assert.equal(run("keys.has('Enter') || !swallowed.has('Enter')"), false);
+run("uiAction('resume')"); // lo que haría el clic del botón «Continuar»
+run.fire("keydown", { code: "Enter", repeat: true });
+assert.deepEqual(J("[state, keys.has('Enter')]"), ["playing", false]); // la repetición no se filtra
+run.fire("keyup", { code: "Enter" });
+run.fire("keydown", { code: "Space", target: btnTarget }); // jugando, Espacio siempre es saltar
+assert.equal(run("keys.has('Space')"), true);
+run.fire("keyup", { code: "Space" });
+run.fire("keydown", { code: "KeyP" });
+run.fire("keydown", { code: "KeyP", repeat: true });
+assert.equal(run("state"), "paused");
+run.fire("keyup", { code: "KeyP" });
+run.fire("keydown", { code: "KeyP" });
+assert.equal(run("state"), "playing");
+run("pause(); player.x=900; uiAction('restart')");
+assert.deepEqual(J("[state, player.x]"), ["playing", 70]);
+run("pause(); uiAction('title')");
+assert.deepEqual(J("[state, player, uiView().hud.ammo]"), ["menu", null, 24]);
+run("draw()"); // el título dibuja el escenario sin jugador
+// Mapa: panel «Las cinco cuerdas» (la ficha del canvas se omite) y selección por arriba/abajo.
+assert.equal(run("uiAction('map')"), true);
+assert.equal(run("state"), "map");
+run("drawMap()");
+assert.equal(lastMapOpts.card, false);
+let mv = J("uiView().map");
+assert.equal(mv.selected, 0);
+assert.deepEqual(
+  mv.rows.map((r) => r.status + ":" + r.label),
+  ["current:EN CURSO", "locked:Bloqueada", "locked:Bloqueada", "locked:Bloqueada", "locked:Bloqueada"],
+);
+assert.deepEqual([mv.playable, mv.playLabel, mv.notice], [true, "Jugar etapa I", ""]);
+assert.ok(mv.history.startsWith("Mayo de 1536") && !/^Ficción/.test(mv.fiction) && /^[A-ZÁÉÍÓÚ]/.test(mv.fiction));
+run("uiAction('select', 3)");
+mv = J("uiView().map");
+assert.deepEqual([mv.selected, mv.playable, mv.playLabel], [3, false, "Próximamente"]);
+assert.equal(run("uiAction('play')"), false);
+assert.equal(run("state"), "map");
+assert.ok(J("uiView().map").notice.includes("IV"));
+run("mapKey('ArrowUp')");
+assert.equal(run("mapS.selected"), 2);
+run("mapKey('ArrowDown'); mapKey('KeyS')");
+assert.equal(run("mapS.selected"), 4);
+run("uiAction('select', 99)");
+assert.equal(run("mapS.selected"), 4);
+run("mapPointer(790, 455)"); // el antiguo botón de la ficha ya no existe con el panel HTML
+assert.equal(run("state"), "map");
+run("uiAction('select', 0)");
+assert.equal(run("uiAction('play')"), true);
+assert.equal(run("state"), "playing");
+run("win()");
+assert.equal(run("state"), "won");
+run("uiAction('map')");
+mv = J("uiView().map");
+assert.deepEqual(
+  mv.rows.slice(0, 3).map((r) => r.label),
+  ["COMPLETADA", "PRÓXIMAMENTE", "Bloqueada"],
+);
+assert.equal(mv.selected, 1);
+assert.equal(run("uiAction('sound')"), true);
+assert.equal(J("uiView()").sound, true);
 console.log(
-  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques).",
+  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones).",
 );

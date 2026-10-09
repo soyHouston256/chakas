@@ -8,7 +8,7 @@
  *   draw(ctx, t, opts)              -> dibuja el mapa completo
  *        opts: { width, height, progress (etapas completadas, 0..5),
  *                selected (índice de etapa), heroT (posición del héroe en la ruta, 0..4;
- *                fraccional = caminando entre etapas) }
+ *                fraccional = caminando entre etapas), card (false = sin ficha a la derecha) }
  *   stages                          -> [{ id, name, place, lat, lon, year, history, fiction,
  *                                         status ('jugable'|'proximamente'), playable }]
  *   statusOf(i, progress)           -> 'completed' | 'current' | 'locked'
@@ -848,10 +848,12 @@
 
     heroToken(ctx, heroT, t);
 
-    // ficha
-    var key = sel + '|' + statusOf(sel, progress);
-    if (L.cardKey !== key || !L.card) { L.card = L.cards[key]; L.cardKey = key; }
-    ctx.drawImage(L.card, CARD.x, CARD.y);
+    // ficha (opts.card === false: la dibuja otra capa, p. ej. el panel HTML de la página)
+    if (o.card !== false) {
+      var key = sel + '|' + statusOf(sel, progress);
+      if (L.cardKey !== key || !L.card) { L.card = L.cards[key]; L.cardKey = key; }
+      ctx.drawImage(L.card, CARD.x, CARD.y);
+    }
     ctx.drawImage(L.frame, 0, 0, W, H);
     ctx.restore();
     return true;

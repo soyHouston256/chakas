@@ -21,6 +21,8 @@ let state = "menu",
 const SP = window.ChankasSprites || null,
   BG = window.ChankasBackground || null,
   MAP = window.ChankasMap || null;
+// Interfaz HTML (ui.js): HUD, título, pausa y panel del mapa. Sin ella, el HUD se dibuja en el canvas.
+const UI = window.ChankasUI && window.ChankasUI.ready ? window.ChankasUI : null;
 const ENEMY_KIND = ["perro", "arcabucero", "piquero", "capitan"];
 const SPR = { facing: 1, fill: 1, flash: false, alpha: 1, rotation: 0, active: false, w: 0, h: 0 };
 const BG_OPTS = { width: 960, height: 540, levelLength: 4200 };
@@ -46,6 +48,11 @@ const RESPAWN_AMMO = 12,
   RESPAWN_FIRE = 2,
   RESPAWN_BOLA = 1,
   RESPAWN_INV = 2.2;
+// Alforjas de la llama: E junto a ella (lejos de una apacheta) da piedras y gasta una carga.
+// Las cargas se reponen al activar una apacheta nueva.
+const LLAMA_LOADS = 5,
+  LLAMA_REFILL = 8,
+  LLAMA_RANGE = 120;
 const piles = [180, 850, 1600, 2450, 3200];
 const platforms = [
   { x: 580, y: 350, w: 180 },
@@ -89,12 +96,22 @@ function reset() {
     animT: 0,
     throwT: 0,
     flash: 0,
+    weapon: "J", // última arma usada (resaltada en el HUD): J huaraca, K fuego, L boleadora
   };
   shots = [];
   particles = [];
   score = 0;
   cam = 0;
-  world = { time: 0, llama: 20, spit: 0, checkpoint: 70, cpPile: -1, deaths: 0 };
+  world = {
+    time: 0,
+    llama: 20,
+    spit: 0,
+    checkpoint: 70,
+    cpPile: -1,
+    deaths: 0,
+    loads: LLAMA_LOADS,
+    eHeld: false,
+  };
   fx = [];
   llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9 };
   enemies = [];
@@ -257,23 +274,28 @@ restartBtn.onclick = (e) => {
   e?.currentTarget?.blur?.();
   reset();
 };
-document.querySelector("#sound").onclick = () => {
-  sound = !sound;
-  document.querySelector("#sound").textContent = "Sonido: " + (sound ? "sí" : "no");
-  tone();
+document.querySelector("#sound").onclick = (e) => {
+  toggleSound();
+  e?.currentTarget?.blur?.(); // el foco no se queda en el botón (Espacio = saltar)
 };
+function toggleSound() {
+  sound = !sound;
+  if (!UI) document.querySelector("#sound").textContent = "Sonido: " + (sound ? "sí" : "no");
+  tone();
+}
 function pause() {
   if (state === "playing") {
     state = "paused";
-    show("Un respiro en el camino", "Tu expedición te espera.", "Continuar →");
+    if (!UI) show("Un respiro en el camino", "Tu expedición te espera.", "Continuar →");
   } else if (state === "paused") {
     state = "playing";
     overlay.style.display = "none";
   }
 }
-// Teclas usadas en el mapa: se ignoran (incluidas sus repeticiones) hasta soltarlas,
-// para que la tecla que confirma la etapa no dispare ni salte al empezar el nivel.
+// Teclas usadas en el mapa y en los menús: se ignoran (incluidas sus repeticiones) hasta
+// soltarlas, para que la tecla que confirma no dispare ni salte al empezar el nivel.
 const swallowed = new Set();
+const ACTIVATE = ["Enter", "NumpadEnter", "Space"];
 function onControl(e) {
   const el = e.target;
   return !!(el && el.closest && el.closest("button, input, select, textarea, a"));
@@ -281,7 +303,11 @@ function onControl(e) {
 addEventListener("keydown", (e) => {
   if (state === "map") {
     // Con el foco en un botón (p. ej. «Sonido»), Enter/Espacio son del botón.
-    if (onControl(e) && (e.code === "Enter" || e.code === "Space" || e.code === "NumpadEnter")) return;
+    if (onControl(e) && ACTIVATE.includes(e.code)) {
+      if (!e.repeat) swallowed.add(e.code);
+      else e.preventDefault(); // sin autorrepetición sobre el botón
+      return;
+    }
     if (!e.repeat || e.code.startsWith("Arrow")) {
       if (mapKey(e.code)) {
         e.preventDefault();
@@ -290,10 +316,32 @@ addEventListener("keydown", (e) => {
     } else if (swallowed.has(e.code)) e.preventDefault();
     return;
   }
+  if (state !== "playing") {
+    // Título, pausa, derrota, victoria: Enter/Espacio sobre un botón activan solo ese botón.
+    if (onControl(e) && ACTIVATE.includes(e.code)) {
+      if (!e.repeat) swallowed.add(e.code);
+      else e.preventDefault();
+      return;
+    }
+    if (state === "paused" && (e.code === "KeyP" || e.code === "Escape")) {
+      e.preventDefault();
+      if (!e.repeat) pause();
+      return;
+    }
+    // Flechas: mover el foco por el menú; Enter: activar la opción principal.
+    if (UI && UI.menuKey && UI.menuKey(e.code, e.repeat)) {
+      e.preventDefault();
+      swallowed.add(e.code);
+      return;
+    }
+  }
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code))
     e.preventDefault();
   if (swallowed.has(e.code)) return;
-  if (e.code === "KeyP" && !e.repeat) pause();
+  if ((e.code === "KeyP" || e.code === "Escape") && !e.repeat) {
+    pause();
+    if (state === "paused") return; // la tecla de pausa no queda «pulsada» en el juego
+  }
   keys.add(e.code);
 });
 addEventListener("keyup", (e) => {
@@ -376,6 +424,7 @@ const MELEE = { reach: 50, damage: 1, cool: 0.42 };
 function melee() {
   if (player.cool > 0) return;
   player.cool = MELEE.cool;
+  player.weapon = "J";
   player.melee = 0.16;
   restartAnim(player, "throw");
   player.throwT = animDur("hero", "throw", 0.3);
@@ -403,6 +452,7 @@ function throwBola() {
   if (player.cool > 0 || player.bola <= 0) return;
   player.bola--;
   player.cool = 0.5;
+  player.weapon = "L";
   restartAnim(player, "throw");
   player.throwT = animDur("hero", "throw", 0.3);
   shots.push({
@@ -438,6 +488,7 @@ function shoot(fire) {
   if (player.cool > 0 || player.ammo <= 0 || (fire && player.fire <= 0)) return;
   player.ammo--;
   if (fire) player.fire--;
+  player.weapon = fire ? "K" : "J";
   player.cool = fire ? 0.65 : 0.24;
   restartAnim(player, "throw");
   player.throwT = animDur("hero", "throw", 0.3);
@@ -468,6 +519,18 @@ function canFire(e) {
 }
 function nearPile() {
   return piles.findIndex((x) => Math.abs(player.x - x) < 85);
+}
+function nearLlama() {
+  return Math.abs(player.x + player.w / 2 - (world.llama + 18)) < LLAMA_RANGE;
+}
+// Recarga desde las alforjas: +LLAMA_REFILL piedras (con tope) y una carga menos.
+function llamaReload() {
+  if (!nearLlama() || world.loads <= 0 || player.ammo >= MAX_AMMO) return false;
+  player.ammo = Math.min(MAX_AMMO, player.ammo + LLAMA_REFILL);
+  world.loads--;
+  tone(600);
+  spawnFx("dust", "puff", world.llama + 18, GROUND - 40);
+  return true;
 }
 function update(dt) {
   world.time += dt;
@@ -520,13 +583,16 @@ function update(dt) {
     // Apacheta nueva: se convierte en el punto de reaparición (bandera izada).
     world.cpPile = pi;
     world.checkpoint = piles[pi];
+    world.loads = LLAMA_LOADS; // la llama repone sus alforjas en la apacheta
     tone(620);
     spawnFx("dust", "puff", piles[pi] + 5, GROUND - 6);
   }
+  const ePressed = keys.has("KeyE") && !world.eHeld;
+  world.eHeld = keys.has("KeyE");
   if (keys.has("KeyE") && pi >= 0) {
     player.ammo = MAX_AMMO;
     player.bola = Math.max(player.bola, MAX_BOLA);
-  }
+  } else if (ePressed) llamaReload();
   world.llama += (player.x - 80 - world.llama) * dt * 3;
   world.spit -= dt;
   for (const e of enemies) {
@@ -824,15 +890,82 @@ function drawPiles() {
       rect(x, GROUND - (active ? 67 : 30), 3, active ? 45 : 8, "#b39f72");
       if (active) rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
     }
-    if (near) {
-      ctx.fillStyle = "#fff0bc";
-      ctx.font = "bold 14px sans-serif";
-      ctx.fillText("E · RECARGAR", x - 40, GROUND - 83);
-    }
+    if (near) drawKeyPrompt(x + 5, GROUND - 100, "E", "RECARGAR");
   });
+}
+// Aviso contextual como en el diseño: caja oscura, borde dorado de 2 px y tecla en «kbd».
+// (cx, y) = centro superior de la caja, en coordenadas del mundo.
+const PROMPT_FONT = "15px 'Atkinson Hyperlegible', 'Segoe UI', sans-serif",
+  KBD_FONT = "bold 14px 'Pixelify Sans', ui-monospace, monospace";
+// En pantallas estrechas el canvas se reduce mucho: los avisos crecen para seguir legibles.
+let promptScale = 1;
+if (typeof ResizeObserver !== "undefined")
+  new ResizeObserver((en) => {
+    const w = en[0] && en[0].contentRect.width;
+    promptScale = w ? Math.max(1, Math.min(2.2, 720 / w)) : 1;
+  }).observe(canvas);
+function drawKeyPrompt(cx, y, key, label) {
+  if (promptScale !== 1) {
+    ctx.save();
+    ctx.translate(cx, y + 32);
+    ctx.scale(promptScale, promptScale);
+    ctx.translate(-cx, -(y + 32));
+  }
+  ctx.font = KBD_FONT;
+  const kw = Math.max(18, ctx.measureText(key).width + 12);
+  ctx.font = PROMPT_FONT;
+  const lw = ctx.measureText(label).width;
+  const w = Math.round(10 + kw + 8 + lw + 12),
+    h = 32,
+    x = Math.round(cx - w / 2);
+  rect(x - 2, y - 2, w + 4, h + 4, "#E9B53B");
+  rect(x, y, w, h, "#0B080D");
+  rect(x + 10, y + 7, kw, 18 + 3, "#8A7D66");
+  rect(x + 10, y + 7, kw, 18, "#F2E6CC");
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#16121A";
+  ctx.font = KBD_FONT;
+  ctx.fillText(key, x + 10 + kw / 2, y + 16.5);
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#F2E6CC";
+  ctx.font = PROMPT_FONT;
+  ctx.fillText(label, x + 10 + kw + 8, y + 16.5);
+  ctx.textBaseline = "alphabetic";
+  if (promptScale !== 1) ctx.restore();
+}
+// Banda de aviso en pantalla (coordenadas de pantalla), centrada.
+function drawNotice(text, y, color = "#F2E6CC") {
+  ctx.font = PROMPT_FONT;
+  const w = Math.round(ctx.measureText(text).width + 28),
+    x = Math.round(W / 2 - w / 2),
+    k = Math.min(promptScale, (W - 24) / w); // nunca más ancho que el canvas
+  ctx.save();
+  ctx.translate(W / 2, y);
+  ctx.scale(k, k);
+  ctx.translate(-W / 2, -y);
+  rect(x, y, w, 30, "#0B080Dd9");
+  rect(x, y + 30, w, 2, "#A8301F");
+  ctx.fillStyle = color;
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + 14, y + 15.5);
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+// Mostrar «E · RECARGAR» sobre la llama solo cuando la recarga sirve de verdad.
+function llamaPromptVisible() {
+  return (
+    !!player &&
+    player.hp > 0 &&
+    nearPile() < 0 &&
+    world.loads > 0 &&
+    player.ammo <= MAX_AMMO - LLAMA_REFILL &&
+    nearLlama()
+  );
 }
 function drawLlama() {
   const lx = world.llama;
+  if (llamaPromptVisible()) drawKeyPrompt(lx + 18, GROUND - 112, "E", "RECARGAR");
   if (SP) {
     resetSpr();
     sprite("llama", llamaS.anim, llamaS.animT, lx - 2, GROUND - 70, 40, 70, llamaS.face);
@@ -975,6 +1108,7 @@ function draw() {
   }
   ctx.restore();
   if (BG && BG.drawForeground) BG.drawForeground(ctx, camR, renderT, BG_OPTS);
+  if (UI) return drawCanvasNotices(); // el HUD vive en HTML (ui.js); aquí solo avisos
   rect(18, 18, HUD_W, 58, "#102b30e8");
   ctx.font = "bold 16px sans-serif";
   ctx.fillStyle = "#f3d394";
@@ -996,6 +1130,13 @@ function draw() {
       ctx.fillText("CAPITÁN DE LA EXPEDICIÓN", 580, 100);
     }
   }
+}
+function drawCanvasNotices() {
+  if (!player || state !== "playing") return;
+  if (player.ammo === 0)
+    drawNotice("Manta vacía: J golpea con la macana · E recarga en la apacheta o la llama", 24);
+  else if (player.x > 3400 && enemies.some((e) => e.type === 3 && !e.dead))
+    drawNotice("CAPITÁN DE LA EXPEDICIÓN", 24, "#E9B53B");
 }
 const HUD_W = 470;
 // Corazones con tope: nunca desbordan el panel (con más vida se muestra «♥×N»).
@@ -1094,6 +1235,7 @@ function playStage(i) {
   }
   mapS.walk = null;
   if (canvas.style) canvas.style.cursor = "default";
+  curStage = i;
   reset();
   return true;
 }
@@ -1101,8 +1243,10 @@ function playStage(i) {
 function mapKey(code) {
   if (state !== "map") return false;
   const n = stageCount();
-  if (code === "ArrowLeft" || code === "KeyA") mapS.selected = Math.max(0, mapS.selected - 1);
-  else if (code === "ArrowRight" || code === "KeyD")
+  // Izquierda/arriba = etapa anterior; derecha/abajo = siguiente (lista vertical del panel).
+  if (code === "ArrowLeft" || code === "KeyA" || code === "ArrowUp" || code === "KeyW")
+    mapS.selected = Math.max(0, mapS.selected - 1);
+  else if (code === "ArrowRight" || code === "KeyD" || code === "ArrowDown" || code === "KeyS")
     mapS.selected = Math.min(n - 1, mapS.selected + 1);
   else if (code === "Enter" || code === "NumpadEnter" || code === "KeyJ" || code === "Space") {
     playStage(mapS.selected);
@@ -1129,6 +1273,7 @@ function drawMap() {
     progress: mapS.progress,
     selected: mapS.selected,
     heroT: mapS.heroT,
+    card: !UI, // con ui.js la ficha es el panel HTML «Las cinco cuerdas»
   });
   if (mapS.msg > 0) {
     ctx.globalAlpha = Math.min(1, mapS.msg * 2);
@@ -1153,7 +1298,7 @@ function canvasPoint(e) {
 function mapPointer(x, y) {
   if (state !== "map") return -1;
   // Botón de la ficha: juega la etapa elegida (o avisa «Próximamente»).
-  if (MAP.buttonAt && MAP.buttonAt(x, y)) {
+  if (!UI && MAP.buttonAt && MAP.buttonAt(x, y)) {
     playStage(mapS.selected);
     return mapS.selected;
   }
@@ -1175,8 +1320,152 @@ canvas.onpointermove = (e) => {
   if (state !== "map" || !MAP.stageAt || !canvas.style) return;
   const [x, y] = canvasPoint(e);
   canvas.style.cursor =
-    MAP.stageAt(x, y) >= 0 || (MAP.buttonAt && MAP.buttonAt(x, y)) ? "pointer" : "default";
+    MAP.stageAt(x, y) >= 0 || (!UI && MAP.buttonAt && MAP.buttonAt(x, y)) ? "pointer" : "default";
 };
+// ---------------------------------------------------------------------------
+// Modelos de vista para la interfaz HTML (funciones puras: se prueban en tests/game.cjs).
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"],
+  START_FIRE = 5;
+let curStage = 0; // etapa que se está jugando (índice en MAP.stages)
+function quipu(n) {
+  return String(Math.max(0, Math.floor(Number(n) || 0))).padStart(4, "0");
+}
+function clampN(v, lo, hi) {
+  v = Number(v);
+  return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo;
+}
+// HUD: vida, armas, cargas de la llama y quipu. p/w pueden faltar (título): valores iniciales.
+function hudView(p, w, sc) {
+  const hp = p ? Math.floor(clampN(p.hp, 0, MAX_HP)) : MAX_HP;
+  const loads = w && w.loads != null ? Math.floor(clampN(w.loads, 0, LLAMA_LOADS)) : LLAMA_LOADS;
+  return {
+    hp,
+    maxHp: MAX_HP,
+    lifeLabel: "Vida: " + hp + " de " + MAX_HP,
+    ammo: p ? p.ammo : MAX_AMMO,
+    maxAmmo: MAX_AMMO,
+    fire: p ? p.fire : START_FIRE,
+    bola: p ? p.bola : MAX_BOLA,
+    weapon: (p && p.weapon) || "J",
+    loads,
+    maxLoads: LLAMA_LOADS,
+    loadLabel: "Carga de la llama: " + loads + " de " + LLAMA_LOADS,
+    quipu: quipu(sc),
+  };
+}
+// Barra de ruta: n etapas en columnas iguales; el marcador avanza desde la etapa actual hacia la
+// siguiente según el % recorrido del nivel. Posiciones en % del ancho de la barra.
+function routeView(stage, pct, n) {
+  n = Math.max(1, Math.floor(n) || 1);
+  stage = Math.floor(clampN(stage, 0, n - 1));
+  pct = Math.round(clampN(pct, 0, 100));
+  const at = (i) => ((i + 0.5) / n) * 100;
+  const next = stage < n - 1 ? at(stage + 1) : at(stage);
+  const marker = Math.round((at(stage) + ((next - at(stage)) * pct) / 100) * 10) / 10;
+  return {
+    stage,
+    roman: ROMAN[stage] || String(stage + 1),
+    pct,
+    start: at(0),
+    end: at(n - 1),
+    marker,
+    fill: Math.round((marker - at(0)) * 10) / 10,
+  };
+}
+function stageNames() {
+  return MAP && MAP.stages && MAP.stages.length
+    ? MAP.stages.map((s) => s.name)
+    : ["El paso de los andenes"];
+}
+function statusLabel(i) {
+  const st = MAP && MAP.statusOf ? MAP.statusOf(i, mapS.progress) : "current";
+  if (st === "completed") return { status: st, label: "COMPLETADA" };
+  if (st === "locked") return { status: st, label: "Bloqueada" };
+  return { status: st, label: stagePlayable(i) ? "EN CURSO" : "PRÓXIMAMENTE" };
+}
+// Panel del mapa «Las cinco cuerdas».
+function mapPanelView() {
+  const stages = (MAP && MAP.stages) || [];
+  const sel = Math.floor(clampN(mapS.selected, 0, Math.max(0, stages.length - 1)));
+  const s = stages[sel] || {};
+  const fiction = String(s.fiction || "").replace(/^Ficción:\s*/, "");
+  const playable = stagePlayable(sel);
+  return {
+    selected: sel,
+    rows: stages.map((st, i) => ({ roman: ROMAN[i] || String(i + 1), name: st.name, ...statusLabel(i) })),
+    history: s.history || "",
+    fiction: fiction ? fiction[0].toUpperCase() + fiction.slice(1) : "",
+    playable,
+    playLabel: playable ? "Jugar etapa " + (ROMAN[sel] || sel + 1) : "Próximamente",
+    notice: mapS.msg > 0 ? "Próximamente: la etapa " + (ROMAN[sel] || sel + 1) + " está en construcción." : "",
+  };
+}
+function uiView() {
+  const names = stageNames();
+  return {
+    state,
+    sound,
+    hasMap: !!(MAP && MAP.stages && MAP.stages.length),
+    hud: hudView(player, world, score),
+    route: routeView(curStage, player ? (player.x / END) * 100 : 0, names.length),
+    stageNames: names,
+    stageName: names[Math.min(curStage, names.length - 1)],
+    map: state === "map" ? mapPanelView() : null,
+  };
+}
+// Volver a la pantalla de título (la partida en curso se abandona).
+function goTitle() {
+  state = "menu";
+  player = null;
+  world = null;
+  shots = [];
+  enemies = [];
+  particles = [];
+  fx = [];
+  cam = 0;
+  keys.clear();
+  mapS.walk = null;
+  overlay.style.display = "none";
+  restartBtn.hidden = true;
+  return true;
+}
+// Acciones de la interfaz HTML. game.js decide; la interfaz solo refleja el estado.
+function uiAction(name, arg) {
+  switch (name) {
+    case "start": // título → etapa I
+      if (state !== "menu") return false;
+      curStage = 0;
+      reset();
+      return true;
+    case "map":
+      if (state === "map") return false;
+      return openMap(state === "won");
+    case "resume":
+      if (state !== "paused") return false;
+      pause();
+      return true;
+    case "restart":
+      if (state !== "paused" && state !== "lost" && state !== "won") return false;
+      reset();
+      return true;
+    case "title":
+      return goTitle();
+    case "sound":
+      toggleSound();
+      return true;
+    case "select": {
+      if (state !== "map") return false;
+      const i = Math.floor(clampN(arg, 0, stageCount() - 1));
+      if (i !== mapS.selected) tone(520);
+      mapS.selected = i;
+      mapS.armed = -1;
+      return true;
+    }
+    case "play":
+      return playStage(mapS.selected);
+  }
+  return false;
+}
 function loop(t) {
   const dt = Math.min((t - last) / 1000, 0.033);
   last = t;
@@ -1189,6 +1478,9 @@ function loop(t) {
     else if (state === "won" || state === "lost") updateFx(dt);
     draw();
   }
+  if (UI) UI.sync();
   requestAnimationFrame(loop);
 }
+if (UI) UI.init({ view: uiView, action: uiAction });
+else overlay.style.display = "flex"; // sin ui.js: la tarjeta clásica hace de título
 requestAnimationFrame(loop);
