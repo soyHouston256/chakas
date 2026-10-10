@@ -12,7 +12,9 @@
  *        (x, y) = esquina superior izquierda del hitbox tal como lo usa game.js.
  *        opts: { facing: 1|-1, scale, flash (bool|0..1), alpha, rotation (rad),
  *                fill (0..1, carga de la manta del héroe), active (bool, apacheta),
- *                w, h (hitbox si difiere del por defecto), frame (forzar índice) }
+ *                w, h (hitbox si difiere del por defecto), frame (forzar índice),
+ *                outline ('#rrggbb': contorno claro de 1 px de arte alrededor de la silueta;
+ *                         se pre-renderiza una vez por fotograma y color y queda en caché) }
  *   list()          -> { kind: { box, scale, anchor, anims: { anim: {frames, fps, loop} } } }
  *   size(kind)      -> { w, h, anchor, scale, frameW, frameH }
  *   kindFor(entity) -> nombre de kind según los campos de game.js
@@ -282,8 +284,34 @@
     var K = KINDS[kind], A = K.anims[anim];
     var g = A.build(i, variant);
     if (g.w !== K.fw || g.h !== K.fh) g = g.fit(K.fw, K.fh);
-    f = CACHE[key] = { grid: g, canvas: null, white: null };
+    f = CACHE[key] = { grid: g, canvas: null, white: null, rim: null, rimColor: '' };
     return f;
+  }
+  // Contorno exterior (1 px de arte, w+2 × h+2) del color pedido: los píxeles vacíos que
+  // tocan la silueta (incluidas diagonales). Se construye una vez y se guarda en el fotograma.
+  var rimBuilt = 0;
+  function rimCanvas(g, color) {
+    var w = g.w + 2, h = g.h + 2, cv = makeCanvas(w, h);
+    if (!cv) return null;
+    var cx = cv.getContext('2d'), im = cx.createImageData(w, h), a = im.data;
+    var r = parseInt(color.substr(1, 2), 16), gg = parseInt(color.substr(3, 2), 16), b = parseInt(color.substr(5, 2), 16);
+    function solid(x, y) {
+      if (x < 0 || y < 0 || x >= g.w || y >= g.h) return false;
+      var v = g.d[y * g.w + x];
+      return v !== '.' && !SOFT[v];
+    }
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var sx = x - 1, sy = y - 1;
+      if (solid(sx, sy)) continue;
+      if (solid(sx - 1, sy) || solid(sx + 1, sy) || solid(sx, sy - 1) || solid(sx, sy + 1) ||
+          solid(sx - 1, sy - 1) || solid(sx + 1, sy - 1) || solid(sx - 1, sy + 1) || solid(sx + 1, sy + 1)) {
+        var k = (y * w + x) * 4;
+        a[k] = r; a[k + 1] = gg; a[k + 2] = b; a[k + 3] = 235;
+      }
+    }
+    cx.putImageData(im, 0, 0);
+    rimBuilt++;
+    return cv;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1244,6 +1272,10 @@
     }
     ctx.translate(Math.round(px), Math.round(py));
     ctx.scale(face * s, s);
+    if (o.outline) {
+      if (f.rimColor !== o.outline) { f.rim = rimCanvas(f.grid, o.outline); f.rimColor = o.outline; }
+      if (f.rim) ctx.drawImage(f.rim, -K.ax - 1, -K.ay - 1);
+    }
     ctx.drawImage(f.canvas, -K.ax, -K.ay);
     if (o.flash) {
       if (!f.white) f.white = toCanvas(f.grid, true);
@@ -1331,6 +1363,7 @@
     frameIndex: function (kind, anim, t) { var K = KINDS[kind]; return K && K.anims[anim] ? frameIndex(K.anims[anim], t) : 0; },
     duration: function (kind, anim) { var K = KINDS[kind]; return K && K.anims[anim] ? K.anims[anim].n / K.anims[anim].fps : 0; },
     _grid: function (kind, anim, i, variant) { return getFrame(kind, anim, i, variant || 0).grid; },
+    _rimsBuilt: function () { return rimBuilt; },
     palette: HEX
   };
 })(typeof window !== 'undefined' ? window : this);

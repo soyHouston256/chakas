@@ -24,7 +24,9 @@ const SP = window.ChankasSprites || null,
 // Interfaz HTML (ui.js): HUD, título, pausa y panel del mapa. Sin ella, el HUD se dibuja en el canvas.
 const UI = window.ChankasUI && window.ChankasUI.ready ? window.ChankasUI : null;
 const ENEMY_KIND = ["perro", "arcabucero", "piquero", "capitan"];
-const SPR = { facing: 1, fill: 1, flash: false, alpha: 1, rotation: 0, active: false, w: 0, h: 0 };
+const SPR = { facing: 1, fill: 1, flash: false, alpha: 1, rotation: 0, active: false, outline: null, w: 0, h: 0 };
+// Contorno claro del héroe (lo pre-renderiza art/sprites.js una vez por fotograma de arte).
+const HERO_RIM = "#f6e3a6";
 const BG_OPTS = { width: 960, height: 540, levelLength: 4200 };
 const DOG_W = 44,
   DOG_H = 26;
@@ -860,6 +862,7 @@ function resetSpr() {
   SPR.alpha = 1;
   SPR.rotation = 0;
   SPR.active = false;
+  SPR.outline = null;
 }
 function drawLegacyBackground() {
   const grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -894,7 +897,6 @@ function drawLegacyGround() {
 }
 function drawPiles() {
   piles.forEach((x, i) => {
-    const near = player && Math.abs(player.x - x) < 85;
     // Bandera izada solo en la apacheta activada (punto de reaparición).
     const active = !!world && world.cpPile === i;
     if (SP) {
@@ -906,8 +908,43 @@ function drawPiles() {
       rect(x, GROUND - (active ? 67 : 30), 3, active ? 45 : 8, "#b39f72");
       if (active) rect(x + 3, GROUND - 67, 34, 19, "#dcb55d");
     }
-    if (near) drawKeyPrompt(x + 5, GROUND - 100, "E", "RECARGAR");
   });
+}
+// Avisos «E · RECARGAR» de apachetas y llama: se dibujan al final, sobre los personajes.
+function drawPrompts() {
+  if (player.hp > 0) {
+    const pi = nearPile();
+    if (pi >= 0) drawKeyPrompt(piles[pi] + 5, GROUND - 100, "E", "RECARGAR");
+  }
+  if (llamaPromptVisible()) drawKeyPrompt(world.llama + 18, GROUND - 112, "E", "RECARGAR");
+}
+// Sombra suave en el suelo bajo los personajes (elipse, sin reservar memoria).
+function shadow(cx, y, rx, a) {
+  ctx.globalAlpha = a;
+  ctx.fillStyle = "#140c08";
+  ctx.beginPath();
+  ctx.ellipse(cx, y, rx, Math.max(2, rx * 0.26), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+// Suelo bajo el héroe (plataforma o terreno) para colocar su sombra al saltar.
+function floorUnder(o) {
+  let f = GROUND;
+  const feet = o.y + o.h;
+  for (const p of platforms)
+    if (o.x + o.w > p.x && o.x < p.x + p.w && feet <= p.y + 2) f = Math.min(f, p.y);
+  return f;
+}
+function drawShadows() {
+  shadow(world.llama + 18, GROUND - 1, 22, 0.24);
+  for (const e of enemies) {
+    if (e.dead || e.gone) continue;
+    shadow(e.x + e.w / 2, e.y + e.h - 1, e.type === 3 ? 42 : e.w * 0.6, 0.26);
+  }
+  // El héroe: sombra más marcada (se encoge y aclara al saltar).
+  const f = floorUnder(player),
+    k = Math.max(0.45, 1 - (f - player.y - player.h) / 170);
+  shadow(player.x + player.w / 2, f - 1, 21 * k, 0.5 * k);
 }
 // Aviso contextual como en el diseño: caja oscura, borde dorado de 2 px y tecla en «kbd».
 // (cx, y) = centro superior de la caja, en coordenadas del mundo.
@@ -981,7 +1018,6 @@ function llamaPromptVisible() {
 }
 function drawLlama() {
   const lx = world.llama;
-  if (llamaPromptVisible()) drawKeyPrompt(lx + 18, GROUND - 112, "E", "RECARGAR");
   if (SP) {
     resetSpr();
     sprite("llama", llamaS.anim, llamaS.animT, lx - 2, GROUND - 70, 40, 70, llamaS.face);
@@ -1038,6 +1074,7 @@ function drawPlayer() {
     SPR.fill = player.ammo / 24;
     SPR.flash = player.flash > 0;
     SPR.alpha = blink ? 0.45 : 1;
+    SPR.outline = HERO_RIM;
     sprite("hero", player.anim, player.animT, player.x, player.y, player.w, player.h, player.face);
   } else if (!blink)
     person(player.x, player.y, -1, player.ground ? Math.sin(world.time * 15) * 3 : 0);
@@ -1115,12 +1152,14 @@ function draw() {
   } else drawLegacyGround();
   drawPiles();
   if (player) {
+    drawShadows();
     drawLlama();
     drawEnemies(false);
-    drawPlayer();
+    drawPlayer(); // el héroe va delante de la llama y de las apachetas
     drawShots();
     drawFx();
     for (const p of particles) rect(p.x, p.y, 4, 4, p.color);
+    drawPrompts();
   }
   ctx.restore();
   if (BG && BG.drawForeground) BG.drawForeground(ctx, camR, renderT, BG_OPTS);
