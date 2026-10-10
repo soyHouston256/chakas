@@ -16,6 +16,13 @@ Abre `index.html` directamente en tu navegador. No requiere instalación ni cone
 
 La llama sigue al protagonista y escupe automáticamente a los enemigos cercanos. Los enemigos tienen roles de aproximación, tiro y patrulla. No hay sangre. Activa el sonido con el botón superior.
 
+## Despliegue
+
+Imagen Docker lista para producción (nginx sin privilegios, cabeceras de seguridad y CSP
+estricta, `/healthz`). Prueba local: `npm run docker:build && npm run docker:run` y abre
+http://localhost:8080. Guía completa (Fly.io, Render/Railway, VPS con Caddy e itch.io con
+`npm run package:itch`): [DEPLOY.md](DEPLOY.md).
+
 ## Verificación
 
 `npm run check` comprueba sintaxis. `npm test` verifica munición, recarga, salto, pausa, derrota y victoria con un entorno DOM simulado. La revisión visual y el balance con jugadores reales quedan pendientes: este entorno bloqueó el servidor local y el navegador de pruebas bloqueó las URLs file.
