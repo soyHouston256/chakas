@@ -357,8 +357,35 @@ assert.ok(calls.some((c) => c.kind === "boleadora" && c.anim === "spin"));
 // ---------------------------------------------------------------------------
 // Mapa de misiones: título → mapa → nivel, victoria → mapa con progreso, etapas
 // bloqueadas no jugables, localStorage robusto y fallback sin módulo de mapa.
-function realMap() {
-  const ctx = { console, Math, Number, JSON };
+// Lienzos falsos pero funcionales (para que map.js pueda preparar y dibujar de verdad).
+function fakeCanvasDoc() {
+  const mk = () => {
+    const c = { width: 0, height: 0 };
+    const g = new Proxy(
+      {},
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          if (k === "measureText") return (s) => ({ width: String(s).length * 7 });
+          if (k === "createImageData") return (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) });
+          if (k === "getImageData") return (x, y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4) });
+          if (k === "canvas") return c;
+          return () => {};
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      },
+    );
+    c.getContext = () => g;
+    return c;
+  };
+  return { createElement: mk };
+}
+function realMap(withCanvas) {
+  const ctx = { console, Math, Number, JSON, Uint8ClampedArray, Float32Array, Uint8Array };
+  if (withCanvas) ctx.document = fakeCanvasDoc();
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync("art/peru-data.js", "utf8"), ctx);
@@ -771,6 +798,10 @@ assert.deepEqual(J("[PD.x === PD.home, PD.aggro, PD.anim]"), [true, false, "idle
 run(`player.x=1400; var tw=-1, tl=-1; for (let i=0;i<300;i++){ world.spit=9; update(1/60); player.x=1400;
   if (PD.wind>0 && tw<0) tw=i; if (PD.lunge>0 && tl<0) tl=i; }`);
 assert.equal(run("PD.aggro"), true);
+// La alerta dura DOG.notice completa sin moverse (aunque su enfriamiento ya estuviera a 0).
+run(`reset(); enemies.forEach(e=>e.dead=true); PD=enemies[3]; PD.dead=false; PD.cool=0; player.x=1400; player.inv=999;
+  var still=0; update(1/60); for (let i=0;i<60;i++){ world.spit=9; const x0=PD.x; update(1/60); player.x=1400; if (PD.alert>0 && PD.x===x0) still++; }`);
+assert.ok(run("still") / 60 >= 0.6, "alerta quieta: " + run("still"));
 assert.ok(run("tw") >= 0 && (run("tl") - run("tw")) / 60 >= 0.25);
 // Quien camina hacia la derecha sin disparar pierde como mucho un corazón con el primer perro.
 run(`reset(); enemies.forEach((e,i)=>{ if (i) e.dead=true; }); keys.add('ArrowRight');
@@ -784,6 +815,12 @@ assert.deepEqual(J("[world.cpPile, world.checkpoint]"), [5, 3500]);
 assert.ok(run("piles[ARENA_PILE] > 3400 && piles[ARENA_PILE] < enemies[8].home"));
 run("player.ammo=0; keys.add('KeyE'); update(1/60); keys.clear()");
 assert.equal(run("player.ammo"), 24);
+// Con el jefe vivo, mantener E no da boleadoras infinitas: una recarga por vida y por pulsación.
+run("keys.clear(); update(1/60); player.bola=0; player.ammo=0; keys.add('KeyE'); update(1/60); keys.add('KeyL'); for (let i=0;i<120;i++) { player.cool=0; update(1/60); }");
+assert.ok(run("player.bola") === 0, "boleadoras infinitas en la arena: " + run("player.bola"));
+run("keys.clear(); update(1/60); keys.add('KeyE'); update(1/60); keys.clear()");
+assert.equal(run("player.ammo < 24 || player.bola < 3"), true);
+run("world.arenaReloads=1; player.ammo=24;");
 // Al reaparecer allí, el jefe sube al 60 % si tenía menos…
 run("var BA=enemies[8]; BA.hp=5; player.hp=1; player.inv=0; hit(); update(1/60); respawn()");
 assert.deepEqual(J("[player.x, BA.hp, BA.x]"), [3500, Math.ceil(32 * 0.6), 3910]);
@@ -890,11 +927,20 @@ for (const [lat, lon] of [[-0.1, -75.2], [-18.3, -70.4], [-4.5, -81.3], [-10, -7
   assert.ok(x >= 0 && x <= 780 && y >= 0 && y <= 1040, "Perú en vertical: " + lat + "," + lon);
 }
 
+// El mapa real se prepara y se dibuja en ambos encuadres (lienzos falsos funcionales).
+const RMC = realMap(true);
+assert.equal(RMC.prepare(), true);
+assert.equal(RMC.draw(fakeCtx(), 0, { width: 960, height: 540, card: false }), true);
+assert.equal(RMC.draw(fakeCtx(), 0, { width: 780, height: 1040, layout: "portrait", cartouche: false }), true);
+assert.equal(RMC.viewFor({ width: 780, height: 1040 }).layout, "portrait");
+const [cx3, cy3] = RMC.toScreen(RMC.stages[3].node[0], RMC.stages[3].node[1] - 8);
+assert.equal(RMC.stageAt(cx3, cy3), 3); // usa la vista del último dibujo (vertical)
+assert.equal(RMC.buttonAt(790, 455), false); // en vertical no hay ficha
 // Juego + interfaz en un escenario estrecho: el canvas pasa a 780×1040 en el mapa, el toque
 // se escala con el tamaño real del canvas y selecciona la etapa; al jugar vuelve a 960×540.
 run = makeGame({
   ChankasUI: { ready: true, init() {}, sync() {}, menuKey: () => false },
-  ChankasMap: { ...MAPSTUB, draw: (c, t, o) => (RM.draw(c, t, o), true) },
+  ChankasMap: { ...RMC, prepare: () => true },
   localStorage: memStorage(),
 });
 run("canvas.dataset = {}; stageW = 390; uiAction('map'); drawMap()");
@@ -903,6 +949,12 @@ run("canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: 390, heig
 assert.deepEqual(J("canvasPoint({ clientX: 10 + 195, clientY: 20 + 260 })"), [390, 520]);
 const [tx, ty] = RM.toScreen(RM.stages[3].node[0], RM.stages[3].node[1] - 8, PORT);
 run(`mapPointer(...canvasPoint({ clientX: 10 + ${tx} / 2, clientY: 20 + ${ty} / 2 }))`);
+assert.equal(run("mapS.selected"), 3);
+// …y el rótulo del nombre, debajo del icono, también.
+const [lx0, ly0] = RM.toScreen(RM.stages[0].node[0], RM.stages[0].node[1] + 32, PORT);
+run(`mapPointer(...canvasPoint({ clientX: 10 + ${lx0} / 2, clientY: 20 + ${ly0} / 2 }))`);
+assert.equal(run("mapS.selected"), 0);
+run("uiAction('select', 3)");
 assert.equal(run("mapS.selected"), 3);
 run("stageW = 1200; drawMap()");
 assert.deepEqual(J("[canvas.width, canvas.height, canvas.dataset.layout]"), [960, 540, "landscape"]);

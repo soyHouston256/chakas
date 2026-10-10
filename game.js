@@ -59,6 +59,7 @@ const LLAMA_LOADS = 5,
 // y recarga justo antes del jefe (ARENA_PILE).
 const piles = [180, 850, 1600, 2450, 3200, 3500];
 const ARENA_PILE = piles.length - 1,
+  ARENA_RELOADS = 1, // recargas en la apacheta de la arena por vida, con el jefe vivo
   BOSS_RESPAWN_HP = 0.6; // al reaparecer en la arena, el jefe recupera hasta el 60 % si tenía menos
 const platforms = [
   { x: 580, y: 350, w: 180 },
@@ -117,6 +118,7 @@ function reset() {
     deaths: 0,
     loads: LLAMA_LOADS,
     eHeld: false,
+    arenaReloads: ARENA_RELOADS,
   };
   fx = [];
   llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9 };
@@ -161,6 +163,7 @@ function reset() {
 // de la arena: allí recupera hasta el 60 %) y la munición sube a un mínimo razonable.
 function respawn() {
   world.deaths++;
+  world.arenaReloads = ARENA_RELOADS;
   Object.assign(player, {
     x: world.checkpoint,
     y: GROUND - player.h,
@@ -189,6 +192,7 @@ function respawn() {
     e.lunge = 0;
     e.flash = 0;
     e.aggro = false;
+    e.alert = 0;
     e.hitDone = false;
     // En la apacheta de la arena, el capitán recupera el aliento: hasta el 60 % de su vida
     // (si tenía más, la conserva). En las demás apachetas conserva el daño recibido.
@@ -228,6 +232,7 @@ function animFields() {
     pdir: -1, // piquero: sentido de la patrulla
     hitDone: false, // piquero: la estocada en curso ya hirió
     aggro: false, // perro: ya vio al héroe
+    alert: 0, // perro: segundos de alerta restantes antes de correr
   };
 }
 // Cambia de animación solo si es distinta (reinicia el temporizador de la acción).
@@ -549,6 +554,9 @@ function canFire(e) {
   const visible = e.x + e.w > cam + FIRE_MARGIN && e.x < cam + W - FIRE_MARGIN;
   return visible && Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < FIRE_RANGE;
 }
+function arenaLive() {
+  return enemies.some((e) => e.type === 3 && !e.dead);
+}
 function nearPile() {
   return piles.findIndex((x) => Math.abs(player.x - x) < 85);
 }
@@ -621,7 +629,16 @@ function update(dt) {
   }
   const ePressed = keys.has("KeyE") && !world.eHeld;
   world.eHeld = keys.has("KeyE");
-  if (keys.has("KeyE") && pi >= 0) {
+  if (pi === ARENA_PILE && arenaLive()) {
+    // En la arena, con el capitán vivo, la apacheta recarga una sola vez por vida y con
+    // una pulsación (no se puede mantener E para piedras y boleadoras infinitas).
+    if (ePressed && world.arenaReloads > 0) {
+      world.arenaReloads--;
+      player.ammo = MAX_AMMO;
+      player.bola = Math.max(player.bola, MAX_BOLA);
+      tone(600);
+    }
+  } else if (keys.has("KeyE") && pi >= 0) {
     player.ammo = MAX_AMMO;
     player.bola = Math.max(player.bola, MAX_BOLA);
   } else if (ePressed) llamaReload();
@@ -768,8 +785,15 @@ function updateDog(e, dir, dt, touching) {
     setAnim(e, "idle");
     if (!canFire(e)) return;
     e.aggro = true;
-    e.cool = Math.max(e.cool, DOG.notice);
+    e.alert = DOG.notice;
     e.face = dir;
+    return;
+  }
+  if (e.alert > 0) {
+    // Alerta: mira al héroe sin moverse ni atacar.
+    e.alert -= dt;
+    e.face = dir;
+    setAnim(e, "idle");
     return;
   }
   if (e.cool > DOG.cool + DOG.lunge) {
@@ -1046,7 +1070,8 @@ function drawPiles() {
 function drawPrompts() {
   if (player.hp > 0) {
     const pi = nearPile();
-    if (pi >= 0) drawKeyPrompt(piles[pi] + 5, GROUND - 100, "E", "RECARGAR");
+    if (pi >= 0 && !(pi === ARENA_PILE && arenaLive() && world.arenaReloads <= 0))
+      drawKeyPrompt(piles[pi] + 5, GROUND - 100, "E", "RECARGAR");
   }
   if (llamaPromptVisible()) drawKeyPrompt(world.llama + 18, GROUND - 112, "E", "RECARGAR");
 }
