@@ -30,6 +30,8 @@ jobs:
           docker run -d --name chankas -p 8080:8080 --read-only --tmpfs /tmp \
             --cap-drop ALL --security-opt no-new-privileges:true chankas:ci
           for i in $(seq 1 20); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          curl -fsS http://localhost:8080/healthz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)" = 200
           curl -fsSI http://localhost:8080/ | tee headers.txt
           grep -qi '^content-security-policy:' headers.txt
           grep -qi '^x-content-type-options: nosniff' headers.txt

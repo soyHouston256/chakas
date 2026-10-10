@@ -5,8 +5,8 @@
 // - La lista RUNTIME es la fuente de verdad de lo que se publica (Docker y zip de itch.io).
 // - Se valida contra las etiquetas <script src> y <link rel="stylesheet" href> locales de
 //   index.html: si index.html referencia un archivo que no está en la lista (o al revés), falla.
-// - En la copia de index.html, cada referencia local recibe "?v=<hash del contenido>", de modo
-//   que el servidor puede cachear JS/CSS como inmutables sin riesgo de servir versiones viejas.
+// - Cada JS/CSS se copia con el hash de su contenido en el nombre (game.<hash>.js) y la copia de
+//   index.html apunta a esos nombres: el servidor puede cachearlos como inmutables.
 // - Nunca se copian data.txt, docs/, tests/, art/preview-*.html ni nada fuera de la lista.
 "use strict";
 const fs = require("node:fs"),
@@ -59,18 +59,23 @@ if (missing.length || unused.length) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, "art"), { recursive: true });
 
+const written = [];
 for (const rel of ASSETS) {
   const buf = fs.readFileSync(path.join(ROOT, rel));
-  fs.writeFileSync(path.join(out, rel), buf);
   const v = crypto.createHash("sha256").update(buf).digest("hex").slice(0, 12);
+  // Nombre físico con hash (game.<hash>.js): el archivo servido ES esa versión, así que puede
+  // cachearse como inmutable incluso durante despliegues graduales.
+  const hashed = rel.replace(/\.(js|css)$/, `.${v}.$1`);
+  fs.writeFileSync(path.join(out, hashed), buf);
+  written.push(hashed);
   const attr = rel.endsWith(".css") ? "href" : "src";
   const before = `${attr}="${rel}"`;
   if (!html.includes(before)) throw new Error("No se encontró " + before + " en index.html");
-  html = html.split(before).join(`${attr}="${rel}?v=${v}"`);
+  html = html.split(before).join(`${attr}="${hashed}"`);
 }
 fs.writeFileSync(path.join(out, "index.html"), html);
 if (with404) fs.copyFileSync(path.join(ROOT, "deploy/404.html"), path.join(out, "404.html"));
 
-const files = ["index.html", ...ASSETS, ...(with404 ? ["404.html"] : [])];
+const files = ["index.html", ...written, ...(with404 ? ["404.html"] : [])];
 const total = files.reduce((n, f) => n + fs.statSync(path.join(out, f)).size, 0);
 console.log(`dist: ${files.length} archivos, ${(total / 1024).toFixed(1)} KiB → ${out}`);

@@ -16,8 +16,9 @@ la lista no coincide con las etiquetas `<script>`/`<link>` de `index.html`:
 | `404.html` (solo en la imagen Docker) | `.git`, `node_modules`, `dist/`, capturas `*.png`, `scratch/` |
 
 El `.dockerignore` es una lista blanca: `data.txt` y `docs/` ni siquiera entran al contexto de
-build. En la copia de `index.html` cada JS/CSS lleva `?v=<hash del contenido>`, así que pueden
-cachearse un año como inmutables y cada versión nueva invalida sola la caché.
+build. Cada JS/CSS se publica con el hash de su contenido en el nombre (`game.<hash>.js`,
+`style.<hash>.css`) y la copia de `index.html` apunta a esos nombres: se cachean un año como
+inmutables y cada versión nueva usa URLs nuevas (sin mezclas durante despliegues graduales).
 
 Las fuentes (Jersey 10, Pixelify Sans, Atkinson Hyperlegible) se cargan desde **Google Fonts**
 (`fonts.googleapis.com` / `fonts.gstatic.com`). Ver «Privacidad» al final.
@@ -25,14 +26,17 @@ Las fuentes (Jersey 10, Pixelify Sans, Atkinson Hyperlegible) se cargan desde **
 ## Requisitos
 
 - Docker (Docker Desktop o Docker Engine con BuildKit, que es el predeterminado).
-- Node.js LTS solo si quieres ejecutar las pruebas o empaquetar para itch.io fuera de Docker.
+- Node.js LTS/npm para los atajos `npm run ...`, las pruebas fuera de Docker y el ZIP de
+  itch.io. Con solo Docker, usa los comandos `docker` equivalentes de abajo.
 
 ## Probar en local
 
 ```sh
 # Imagen (el build ejecuta `npm test`; si alguna prueba falla, el build falla)
-npm run docker:build          # = docker build -t chankas:latest .
-npm run docker:run            # = docker run --rm -p 127.0.0.1:8080:8080 --read-only --tmpfs /tmp ...
+npm run docker:build    # o, sin Node: docker build -t chankas:latest .
+npm run docker:run      # o, sin Node:
+docker run --rm --name chankas -p 127.0.0.1:8080:8080 --read-only --tmpfs /tmp \
+  --cap-drop ALL --security-opt no-new-privileges:true chankas:latest
 # abre http://localhost:8080
 ```
 
@@ -58,8 +62,8 @@ Sin Docker: `npm run dev` (servidor Python en :5173) o `npm run build:dist` para
   (no hay rutas de cliente). Solo `GET`/`HEAD`; otros métodos → 405. `server_tokens off`.
 - gzip para HTML/CSS/JS/SVG (brotli no viene en la imagen; si la plataforma o Caddy comprimen
   con brotli/zstd, mejor).
-- Caché: `index.html` → `no-cache` (se revalida con ETag); JS/CSS con `?v=hash` →
-  `max-age=31536000, immutable`; sin `?v` → `max-age=300`.
+- Caché: `/` e `index.html` → `no-cache` (se revalida con ETag); JS/CSS con hash en el nombre →
+  `public, max-age=31536000, immutable`; 404 y `/healthz` → `no-store`.
 - Cabeceras en todas las respuestas (también en 404):
   - `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors <FRAME_ANCESTORS>`
     (sin `'unsafe-inline'`; `data:` solo para las grecas SVG del CSS).
