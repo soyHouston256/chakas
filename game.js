@@ -1282,34 +1282,74 @@ function updateMap(dt) {
     mapS.walk = null;
   } else mapS.heroT = w.from + (w.to - w.from) * w.t;
 }
+// Mapa en pantallas estrechas: con la interfaz HTML (el panel va debajo), el canvas pasa a
+// un encuadre vertical 3:4 (780×1040) centrado en el Perú; al salir del mapa vuelve a 960×540.
+const MAP_PORTRAIT = { w: 780, h: 1040, maxStage: 640 };
+const MAP_HTML_CARTOUCHE = 1000; // = @container stage (min-width: 1000px) de style.css
+let stageW = 0; // ancho CSS del escenario (ResizeObserver)
+if (typeof ResizeObserver !== "undefined" && canvas.parentElement)
+  new ResizeObserver((en) => {
+    stageW = (en[0] && en[0].contentRect.width) || 0;
+  }).observe(canvas.parentElement);
+function mapLayout() {
+  return state === "map" && UI && stageW > 0 && stageW < MAP_PORTRAIT.maxStage ? "portrait" : "landscape";
+}
+function fitCanvas() {
+  const layout = mapLayout(),
+    p = layout === "portrait";
+  const cw = p ? MAP_PORTRAIT.w : W,
+    ch = p ? MAP_PORTRAIT.h : H;
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  if (canvas.dataset && canvas.dataset.layout !== layout) canvas.dataset.layout = layout;
+  return layout;
+}
 function drawMap() {
+  const layout = fitCanvas(),
+    cw = canvas.width || W,
+    ch = canvas.height || H;
   MAP.draw(ctx, renderT, {
-    width: W,
-    height: H,
+    width: cw,
+    height: ch,
+    layout,
     progress: mapS.progress,
     selected: mapS.selected,
     heroT: mapS.heroT,
     card: !UI, // con ui.js la ficha es el panel HTML «Las cinco cuerdas»
+    // En escritorio ancho la página muestra su cartela HTML encima: no se duplica.
+    cartouche: !(UI && stageW >= MAP_HTML_CARTOUCHE),
   });
   if (mapS.msg > 0) {
+    // Centrado en la zona del mapa (sin la ficha del canvas, en todo el ancho).
+    const mx = UI || layout === "portrait" ? cw / 2 : 360,
+      my = layout === "portrait" ? ch / 2 : 264,
+      k = layout === "portrait" ? 1.6 : 1;
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.scale(k, k);
     ctx.globalAlpha = Math.min(1, mapS.msg * 2);
-    rect(150, 236, 420, 56, "#1b1210ee");
+    rect(-210, -28, 420, 56, "#1b1210ee");
     ctx.textAlign = "center";
     ctx.font = "bold 18px Georgia, serif";
     ctx.fillStyle = "#f2c14e";
-    ctx.fillText("Próximamente", 360, 260);
+    ctx.fillText("Próximamente", 0, -4);
     ctx.font = "13px Georgia, serif";
     ctx.fillStyle = "#f6e9cc";
-    ctx.fillText("La próxima etapa está en construcción.", 360, 280);
+    ctx.fillText("La próxima etapa está en construcción.", 0, 16);
+    ctx.restore();
     ctx.textAlign = "left";
-    ctx.globalAlpha = 1;
   }
 }
 // Ratón / toque en el mapa: un toque selecciona; tocar la etapa ya elegida la juega.
 function canvasPoint(e) {
   const r = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
   if (!r || !r.width) return [e.offsetX ?? 0, e.offsetY ?? 0];
-  return [((e.clientX - r.left) * W) / r.width, ((e.clientY - r.top) * H) / r.height];
+  // En el encuadre vertical el canvas mide 780×1040: se escala con su tamaño real.
+  const cw = canvas.width || W,
+    ch = canvas.height || H;
+  return [((e.clientX - r.left) * cw) / r.width, ((e.clientY - r.top) * ch) / r.height];
 }
 function mapPointer(x, y) {
   if (state !== "map") return -1;
@@ -1500,6 +1540,7 @@ function loop(t) {
     updateMap(dt);
     drawMap();
   } else {
+    fitCanvas(); // fuera del mapa, siempre 960×540
     if (state === "playing") update(dt);
     else if (state === "won" || state === "lost") updateFx(dt);
     draw();

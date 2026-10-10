@@ -8,14 +8,23 @@
  *   draw(ctx, t, opts)              -> dibuja el mapa completo
  *        opts: { width, height, progress (etapas completadas, 0..5),
  *                selected (índice de etapa), heroT (posición del héroe en la ruta, 0..4;
- *                fraccional = caminando entre etapas), card (false = sin ficha a la derecha) }
+ *                fraccional = caminando entre etapas), card (false = sin ficha a la derecha),
+ *                layout ('landscape' | 'portrait'; por defecto se deduce de width/height),
+ *                cartouche (false = sin la cartela del título; la muestra otra capa) }
+ *        'portrait' (pantallas estrechas): encuadre vertical 3:4 centrado en el Perú y la
+ *        ruta, con rótulos más grandes; la ficha del canvas no se dibuja.
  *   stages                          -> [{ id, name, place, lat, lon, year, history, fiction,
  *                                         status ('jugable'|'proximamente'), playable }]
  *   statusOf(i, progress)           -> 'completed' | 'current' | 'locked'
- *   stageAt(x, y)                   -> índice de etapa bajo (x, y) en coordenadas del canvas
- *                                      del último draw (o 960×540), o -1
+ *   stageAt(x, y, opts?)            -> índice de etapa bajo (x, y) en coordenadas del canvas
+ *                                      del último draw (o de opts), o -1; acepta el icono
+ *                                      y el rótulo con el nombre
  *   buttonAt(x, y)                  -> true si (x, y) cae sobre el botón de la ficha
  *   project(lat, lon)               -> { x, y } en el sistema base 960×540
+ *   viewFor(opts)                   -> { layout, sc, tx, ty }: pantalla = base·sc + (tx, ty)
+ *   toScreen(bx, by, opts?)         -> [x, y] de un punto base en el canvas
+ *   cartoucheLayout(measure, maxW, boost) -> tamaño de la cartela del título y cuerpo de
+ *                                      letra para que el texto quepa (función pura)
  *
  * Estilo: capas estáticas a 320×180 (mar, desierto, Andes con relieve y nieve, selva,
  * Titicaca, ríos, vecinos tenues, rosa de los vientos con chakana, cartela) escaladas
@@ -31,6 +40,56 @@
   function px(lon) { return X_E + (lon - LON_E) * SX; }
   function py(lat) { return Y0 + (LAT0 - lat) * SY; }
   function project(lat, lon) { return { x: px(lon), y: py(lat) }; }
+
+  /* ------------------------------------------------------------------ */
+  /* Encuadres: apaisado (todo el lienzo base) y vertical (Perú y ruta)  */
+  /* ------------------------------------------------------------------ */
+  // x, y, w, h: recorte del sistema base; k: píxeles de lienzo por unidad base con que se
+  // pre-renderizan los textos; boost/labelBoost: aumento de los rótulos. Posiciones de la
+  // cartela, rosa de los vientos, leyenda y «Mar del Sur» en unidades base.
+  var LAYOUT = {
+    landscape: {
+      name: 'landscape', x: 0, y: 0, w: W, h: H, k: 1, boost: 1, labelBoost: 1,
+      cart: [18, 18], cartMax: 300, compass: [84, 450], sea: [150, 250], legend: [30, 518],
+      labelDx: [0, 0, 0, 0, 0], over: {}
+    },
+    portrait: {
+      name: 'portrait', x: 188, y: 10, w: 390, h: 520, k: 2, boost: 1.15, labelBoost: 1.45,
+      cart: [204, 22], cartMax: 288, compass: [530, 100], sea: [270, 476], legend: null,
+      labelDx: [-20, -16, -42, 0, 0], over: { COLLASUYU: [498, 510], Titicaca: [534, 474], CUNTISUYU: [392, 474] }
+    }
+  };
+  function viewFor(o) {
+    o = o || {};
+    var cw = +o.width || W, ch = +o.height || H;
+    var name = o.layout === 'portrait' || o.layout === 'landscape' ? o.layout : ch > cw ? 'portrait' : 'landscape';
+    var P = LAYOUT[name], sc = Math.min(cw / P.w, ch / P.h);
+    return { layout: name, P: P, sc: sc, tx: (cw - P.w * sc) / 2 - P.x * sc, ty: (ch - P.h * sc) / 2 - P.y * sc, cw: cw, ch: ch };
+  }
+  var lastView = null;
+  function toScreen(bx, by, o) {
+    var V = o ? viewFor(o) : lastView || viewFor();
+    return [bx * V.sc + V.tx, by * V.sc + V.ty];
+  }
+  function toBase(x, y, o) {
+    var V = o ? viewFor(o) : lastView || viewFor();
+    return [(x - V.tx) / V.sc, (y - V.ty) / V.sc];
+  }
+
+  // Cartela del título: el marco se ajusta al texto medido (múltiplo del píxel del mapa) y,
+  // si aun así no cabe en maxW, se reduce el cuerpo de letra. Nunca recorta el texto.
+  // measure(texto, px) -> ancho del texto en 'bold {px}px Georgia'.
+  var CART_T1 = 'CAMINO DE LA RESISTENCIA', CART_T2 = '— 1536 —', CART_PAD = 14, CART_STROKE = 4;
+  function cartoucheLayout(measure, maxW, boost) {
+    boost = boost || 1;
+    maxW = Math.floor((maxW || 300) / S) * S;
+    var f1 = Math.round(15 * boost), f2 = Math.round(14 * boost);
+    function need() { return Math.max(measure(CART_T1, f1), measure(CART_T2, f2)) + CART_STROKE + CART_PAD * 2; }
+    while (need() > maxW && f1 > 8) { f1--; if (f2 > f1) f2 = f1; }
+    var w = Math.min(maxW, Math.ceil(need() / S) * S);
+    var h = Math.ceil(((f1 + f2) * 2.07) / S) * S;
+    return { w: w, h: h, f1: f1, f2: f2, t1: CART_T1, t2: CART_T2, y1: Math.round(h * 0.37), y2: Math.round(h * 0.72), textW: need() - CART_PAD * 2 };
+  }
 
   /* ------------------------------------------------------------------ */
   /* Etapas                                                              */
@@ -565,27 +624,37 @@
     g.restore();
   }
 
-  function buildOverlay() {
-    var c = canvas(W, H), g = c.getContext('2d');
+  // Capa de textos y adornos de un encuadre, pre-renderizada a P.k píxeles por unidad base
+  // y recortada a P (x, y, w, h). Incluye la cartela, la rosa de los vientos y la leyenda.
+  function buildOverlay(P) {
+    var c = canvas(Math.round(P.w * P.k), Math.round(P.h * P.k)), g = c.getContext('2d');
+    var B = P.boost, O = P.over;
+    function font(style, px) { return style + ' ' + Math.round(px * B * 10) / 10 + 'px Georgia, serif'; }
+    function at(name, x, y) { var v = O[name]; return v && v.length ? v : [x, y]; }
+    g.scale(P.k, P.k);
+    g.translate(-P.x, -P.y);
     g.textBaseline = 'middle';
     // regiones del Tawantinsuyu (aprox.) y mar
     g.textAlign = 'center';
-    g.font = 'italic bold 15px Georgia, serif';
-    outlineText(g, 'MAR DEL SUR', 150, 250, '#bfe0ee', '#0f2f4a', 4);
-    g.font = 'italic 11px Georgia, serif';
-    outlineText(g, '(océano Pacífico)', 150, 268, '#9fc6da', '#0f2f4a', 3);
-    g.font = 'bold 12px Georgia, serif';
+    g.font = font('italic bold', 15);
+    outlineText(g, 'MAR DEL SUR', P.sea[0], P.sea[1], '#bfe0ee', '#0f2f4a', 4);
+    g.font = font('italic', 11);
+    outlineText(g, '(océano Pacífico)', P.sea[0], P.sea[1] + 18 * B, '#9fc6da', '#0f2f4a', 3);
+    g.font = font('bold', 12);
     g.globalAlpha = 0.9;
-    regionLabel(g, 'CHINCHAYSUYU', 322, 128, '#f3e3b8', '#3a2414');
-    regionLabel(g, 'ANTISUYU', 520, 228, '#d8f0c8', '#173a1c');
-    regionLabel(g, 'CUNTISUYU', 410, 468, '#f3e3b8', '#3a2414');
-    regionLabel(g, 'COLLASUYU', 590, 512, '#f3e3b8', '#3a2414');
+    var rg = [['CHINCHAYSUYU', 322, 128, '#f3e3b8', '#3a2414'], ['ANTISUYU', 520, 228, '#d8f0c8', '#173a1c'],
+      ['CUNTISUYU', 410, 468, '#f3e3b8', '#3a2414'], ['COLLASUYU', 590, 512, '#f3e3b8', '#3a2414']];
+    for (var r = 0; r < rg.length; r++) {
+      var rp = at(rg[r][0], rg[r][1], rg[r][2]);
+      regionLabel(g, rg[r][0], rp[0], rp[1], rg[r][3], rg[r][4]);
+    }
     g.globalAlpha = 1;
-    g.font = 'italic 10px Georgia, serif';
+    g.font = font('italic', 10);
     var tt = project(-15.75, -69.4);
-    outlineText(g, 'Titicaca', tt.x + 30, tt.y - 4, '#cfeaf6', '#0f2f4a', 3);
+    var tp = at('Titicaca', tt.x + 30, tt.y - 4);
+    outlineText(g, 'Titicaca', tp[0], tp[1], '#cfeaf6', '#0f2f4a', 3);
     // ríos principales (etiquetas pequeñas)
-    g.font = 'italic 9px Georgia, serif';
+    g.font = font('italic', 9);
     var rl = [['Urubamba', -12.1, -72.95, -1.2], ['Apurímac', -14.1, -72.85, 0.9], ['Mantaro', -11.5, -75.35, -0.9], ['Ucayali', -8.4, -74.45, -1.1], ['Marañón', -5.4, -76.2, 0.6]];
     for (var i = 0; i < rl.length; i++) {
       var p = project(rl[i][1], rl[i][2]);
@@ -594,7 +663,7 @@
       g.restore();
     }
     // líneas guía al punto geográfico real
-    var i, s, p;
+    var s;
     for (i = 0; i < stages.length; i++) {
       s = stages[i]; p = project(s.lat, s.lon);
       g.strokeStyle = 'rgba(27,18,16,0.85)';
@@ -605,24 +674,66 @@
       g.fillStyle = '#1b1210'; g.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, 5, 5);
       g.fillStyle = '#d8623f'; g.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 3, 3);
     }
-
-    // título en la cartela
-    g.textAlign = 'center';
-    g.font = 'bold 15px Georgia, serif';
-    outlineText(g, 'CAMINO DE LA RESISTENCIA', 126, 40, '#f2c14e', '#3a1f14', 4);
-    g.font = 'bold 14px Georgia, serif';
-    outlineText(g, '— 1536 —', 126, 61, '#f6e9cc', '#3a1f14', 4);
-    // rosa de los vientos: N
-    g.font = 'bold 13px Georgia, serif';
-    outlineText(g, 'N', 84, 396, '#f2c14e', '#1b1210', 3);
-    // leyenda inferior
-    g.textAlign = 'left';
-    g.font = '11px Georgia, serif';
-    outlineText(g, 'Qhapaq Ñan · ruta del juego', 30, 518, '#e8d7a8', '#10283c', 3);
+    g.imageSmoothingEnabled = false;
+    // rosa de los vientos (pixel art a baja resolución, ×3) con la N encima
+    var cc = canvas(27, 27);
+    drawCompass(cc.getContext('2d'), 13, 13);
+    g.drawImage(cc, P.compass[0] - 40, P.compass[1] - 40, 81, 81);
+    g.font = font('bold', 13);
+    outlineText(g, 'N', P.compass[0], P.compass[1] - 54, '#f2c14e', '#1b1210', 3);
+    // leyenda inferior (en vertical no cabe: la ruta ya la explica el panel)
+    if (P.legend) {
+      g.textAlign = 'left';
+      g.font = font('', 11);
+      outlineText(g, 'Qhapaq Ñan · ruta del juego', P.legend[0], P.legend[1], '#e8d7a8', '#10283c', 3);
+    }
     return c;
   }
+  // Cartela del título, a la medida del texto, en su propio lienzo (se omite cuando la
+  // página ya muestra la cartela HTML: opts.cartouche === false).
+  function buildCartouche(P) {
+    var mc = canvas(4, 4), mg = mc.getContext('2d');
+    var lay = cartoucheLayout(function (t, px) { mg.font = 'bold ' + px + 'px Georgia, serif'; return mg.measureText(t).width; }, P.cartMax, P.boost);
+    var lw = lay.w / S, lh = lay.h / S, lc = canvas(lw + 4, lh);
+    drawCartouche(lc.getContext('2d'), 2, 0, lw, lh);
+    var bw = lay.w + 12, c = canvas(Math.round(bw * P.k), Math.round(lay.h * P.k)), g = c.getContext('2d');
+    g.scale(P.k, P.k);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(lc, 0, 0, bw, lay.h);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    var sw = P.k > 1 ? 3 : 4;
+    g.font = 'bold ' + lay.f1 + 'px Georgia, serif';
+    outlineText(g, lay.t1, 6 + lay.w / 2, lay.y1, '#f2c14e', '#3a1f14', sw);
+    g.font = 'bold ' + lay.f2 + 'px Georgia, serif';
+    outlineText(g, lay.t2, 6 + lay.w / 2, lay.y2, '#f6e9cc', '#3a1f14', sw);
+    c.bw = bw; c.bh = lay.h;
+    return c;
+  }
+  function cartoucheFor(P) {
+    return L.carts[P.name] || (L.carts[P.name] = buildCartouche(P));
+  }
+  function overlayFor(P) {
+    return L.overlays[P.name] || (L.overlays[P.name] = buildOverlay(P));
+  }
+  // Rótulo con el nombre de la etapa (fondo translúcido y contorno), por encuadre.
+  function labelFor(i, st, selected, P) {
+    var key = P.name + '|' + i + '|' + st + '|' + (selected ? 1 : 0);
+    if (L.labels[key]) return L.labels[key];
+    var LB = P.labelBoost, w = Math.round(210 * LB), h = Math.round(30 * LB);
+    var label = canvas(Math.round(w * P.k), Math.round(h * P.k)), lg = label.getContext('2d');
+    lg.scale(P.k, P.k);
+    lg.textAlign = 'center'; lg.textBaseline = 'alphabetic';
+    lg.font = 'bold ' + Math.round((selected ? 13 : 11) * LB) + 'px Georgia, serif';
+    lg.fillStyle = 'rgba(15,19,18,0.4)';
+    var tw = Math.ceil(lg.measureText(stages[i].name).width);
+    lg.fillRect(Math.floor((w - tw) / 2) - 5 * LB, 7 * LB, tw + 10 * LB, 17 * LB);
+    outlineText(lg, stages[i].name, w / 2, 20 * LB, selected ? '#f2c14e' : st === 'locked' ? '#c7bcae' : '#f6e9cc', '#1b1210', 3 * LB);
+    label.bw = w; label.bh = h;
+    return (L.labels[key] = label);
+  }
 
-  function buildFrame() {
+  function buildFrame(LW, LH) {
     var c = canvas(LW, LH), g = c.getContext('2d');
     for (var i = 0; i < 7; i++) {
       g.fillStyle = 'rgba(12,20,22,' + (0.24 - i * 0.028) + ')';
@@ -646,25 +757,14 @@
     if (!route) buildRoute();
     var B = buildBase();
     if (!B) return false;
-    var g = B.canvas.getContext('2d');
-    drawCartouche(g, 6, 6, 72, 20);
-    drawCompass(g, 28, 150);
     var icons = {}, grey = {};
     for (var k in ICON_ROWS) { icons[k] = grid(ICON_ROWS[k]); grey[k] = greyOf(icons[k]); }
-    L = { base: B.canvas, waves: buildWaves(B.ids, B.near), overlay: buildOverlay(), icons: icons, grey: grey, frame: buildFrame(), cards: {}, labels: {}, routes: [], card: null, cardKey: '' };
+    L = { base: B.canvas, waves: buildWaves(B.ids, B.near), overlays: {}, carts: {}, icons: icons, grey: grey, frame: buildFrame(LW, LH), frameP: null, cards: {}, labels: {}, routes: [], card: null, cardKey: '' };
+    overlayFor(LAYOUT.landscape); // el encuadre vertical se prepara al pedirlo por primera vez
     var states = ['completed', 'current', 'locked'];
     for (var i = 0; i < stages.length; i++) for (var j = 0; j < states.length; j++) {
       L.card = null; buildCard(i, states[j]); L.cards[i + '|' + states[j]] = L.card;
-      for (var selected = 0; selected < 2; selected++) {
-        var label = canvas(210, 30), lg = label.getContext('2d');
-        lg.textAlign = 'center'; lg.textBaseline = 'alphabetic';
-        lg.font = (selected ? 'bold 13px' : 'bold 11px') + ' Georgia, serif';
-        lg.fillStyle = 'rgba(15,19,18,0.4)';
-        var tw = Math.ceil(lg.measureText(stages[i].name).width);
-        lg.fillRect(Math.floor((210 - tw) / 2) - 5, 7, tw + 10, 17);
-        outlineText(lg, stages[i].name, 105, 20, selected ? '#f2c14e' : states[j] === 'locked' ? '#c7bcae' : '#f6e9cc', '#1b1210', 3);
-        L.labels[i + '|' + states[j] + '|' + selected] = label;
-      }
+      for (var selected = 0; selected < 2; selected++) labelFor(i, states[j], selected, LAYOUT.landscape);
     }
     for (i = 0; i <= stages.length; i++) {
       var rc = canvas(W, H), rg = rc.getContext('2d');
@@ -771,7 +871,6 @@
   /* ------------------------------------------------------------------ */
   /* Dibujo por fotograma                                                */
   /* ------------------------------------------------------------------ */
-  var lastScale = 1;
   function snap(v) { return Math.round(v / S) * S; }
   function dotsAlong(ctx, d0, d1, color, size, step, phase) {
     ctx.fillStyle = color;
@@ -785,21 +884,25 @@
   function draw(ctx, t, o) {
     if (!ctx) return false;
     o = o || {};
+    var V = viewFor(o), P = V.P;
+    lastView = V;
     if (!L && !prepare()) return false;
-    var cw = o.width || W, ch = o.height || H;
-    var sc = Math.min(cw / W, ch / H);
-    lastScale = sc;
     var progress = clampProgress(o.progress);
     var sel = o.selected == null ? Math.min(progress, stages.length - 1) : Math.max(0, Math.min(stages.length - 1, o.selected | 0));
     var heroT = o.heroT == null ? Math.min(progress, stages.length - 1) : +o.heroT;
     t = +t || 0;
 
     ctx.save();
-    if (sc !== 1) ctx.scale(sc, sc);
+    if (V.tx || V.ty) ctx.translate(V.tx, V.ty);
+    if (V.sc !== 1) ctx.scale(V.sc, V.sc);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(L.base, 0, 0, W, H);
     ctx.drawImage(L.waves[Math.floor(t * 3) & 3], 0, 0, W, H);
-    ctx.drawImage(L.overlay, 0, 0);
+    ctx.drawImage(overlayFor(P), P.x, P.y, P.w, P.h);
+    if (o.cartouche !== false) {
+      var ct = cartoucheFor(P);
+      ctx.drawImage(ct, P.cart[0] - 6, P.cart[1], ct.bw, ct.bh);
+    }
 
     var i, s;
 
@@ -835,7 +938,8 @@
       if (s.icon === 'ships' && st !== 'locked') smoke(ctx, ix, iy, t);
       if (st === 'completed') flag(ctx, ix + iw - 6, iy - 6, t);
       if (st === 'locked') lock(ctx, ix + iw - 9, iy + 3);
-      ctx.drawImage(L.labels[i + '|' + st + '|' + (i === sel ? 1 : 0)], s.node[0] - 105, s.node[1]);
+      var lab = labelFor(i, st, i === sel, P);
+      ctx.drawImage(lab, s.node[0] + P.labelDx[i] - lab.bw / 2, s.node[1], lab.bw, lab.bh);
     }
 
     // flecha de selección (rebota)
@@ -849,12 +953,23 @@
     heroToken(ctx, heroT, t);
 
     // ficha (opts.card === false: la dibuja otra capa, p. ej. el panel HTML de la página)
-    if (o.card !== false) {
+    if (o.card !== false && P.name === 'landscape') {
       var key = sel + '|' + statusOf(sel, progress);
       if (L.cardKey !== key || !L.card) { L.card = L.cards[key]; L.cardKey = key; }
       ctx.drawImage(L.card, CARD.x, CARD.y);
     }
-    ctx.drawImage(L.frame, 0, 0, W, H);
+    if (P.name === 'landscape') {
+      ctx.drawImage(L.frame, 0, 0, W, H);
+      ctx.restore();
+      return true;
+    }
+    ctx.restore();
+    // marco del encuadre vertical, en coordenadas del canvas (píxel de 6 px de lienzo)
+    var fw = Math.max(16, Math.round(V.cw / 6)), fh = Math.max(16, Math.round(V.ch / 6));
+    if (!L.frameP || L.frameP.width !== fw || L.frameP.height !== fh) L.frameP = buildFrame(fw, fh);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(L.frameP, 0, 0, V.cw, V.ch);
     ctx.restore();
     return true;
   }
@@ -912,19 +1027,31 @@
     ctx.fillStyle = '#e6d6ad'; ctx.fillRect(lx - 8, ly - 12, 14, 8); ctx.fillRect(lx + 4, ly - 20, 4, 10);
   }
 
-  function stageAt(x, y) {
+  // Etapa bajo (x, y) del canvas: primero el icono (radio 30 base); si no, el rótulo con el
+  // nombre (ancho aproximado por número de letras, del tamaño del encuadre).
+  function stageAt(x, y, o) {
     if (!route) buildRoute();
-    var bx = x / (lastScale || 1), by = y / (lastScale || 1), best = -1, bd = 30 * 30;
-    for (var i = 0; i < stages.length; i++) {
+    var V = o ? viewFor(o) : lastView || viewFor(), P = V.P, b = toBase(x, y, o);
+    var bx = b[0], by = b[1], best = -1, bd = 30 * 30, i, s;
+    for (i = 0; i < stages.length; i++) {
       var dx = bx - stages[i].node[0], dy = by - (stages[i].node[1] - 10), d = dx * dx + dy * dy;
       if (d <= bd) { bd = d; best = i; }
     }
-    return best;
+    if (best >= 0) return best;
+    var LB = P.labelBoost;
+    for (i = 0; i < stages.length; i++) {
+      s = stages[i];
+      var half = Math.max(24, s.name.length * 3.6 * LB), cx = s.node[0] + P.labelDx[i];
+      if (bx >= cx - half && bx <= cx + half && by >= s.node[1] + 4 * LB && by <= s.node[1] + 26 * LB) return i;
+    }
+    return -1;
   }
 
-  // ¿(x, y) cae sobre el botón «Enter: jugar / Próximamente» de la ficha?
+  // ¿(x, y) cae sobre el botón «Enter: jugar / Próximamente» de la ficha? (solo apaisado)
   function buttonAt(x, y) {
-    var bx = x / (lastScale || 1), by = y / (lastScale || 1);
+    var V = lastView || viewFor();
+    if (V.layout !== 'landscape') return false;
+    var b = toBase(x, y), bx = b[0], by = b[1];
     return bx >= CARD.x + 18 && bx <= CARD.x + CARD.w - 18 && by >= CARD.y + CARD.h - 92 && by <= CARD.y + CARD.h - 52;
   }
 
@@ -937,6 +1064,9 @@
     stageAt: stageAt,
     buttonAt: buttonAt,
     project: project,
+    viewFor: function (o) { var V = viewFor(o); return { layout: V.layout, sc: V.sc, tx: V.tx, ty: V.ty }; },
+    toScreen: toScreen,
+    cartoucheLayout: cartoucheLayout,
     routeLength: function () { return route.total; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

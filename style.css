@@ -370,6 +370,10 @@ kbd {
   object-fit: cover;
   transition: filter 0.2s;
 }
+/* Mapa en pantallas estrechas: game.js pasa el canvas a 780×1040 (encuadre vertical 3:4). */
+.stage > canvas[data-layout="portrait"] {
+  aspect-ratio: 3 / 4;
+}
 .has-ui .stage[data-state="menu"] > canvas {
   filter: brightness(0.55) saturate(0.85);
 }
@@ -661,7 +665,9 @@ body:not(.has-ui) [data-action] {
   left: 0;
   top: 0;
   z-index: 1;
-  width: 300px;
+  width: max-content; /* a la medida del texto: nunca lo recorta */
+  min-width: 300px;
+  max-width: calc(100% / 3 * 2 - 24px);
   min-height: 84px;
   padding: 14px 18px;
   background: var(--deep);
