@@ -1,1 +1,14 @@
-{"name":"chankas-huaraca","version":"0.1.0","private":true,"scripts":{"dev":"python3 -m http.server 5173","check":"node --check game.js","test":"node tests/game.cjs"}}
+{
+  "name": "chankas-huaraca",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 5173",
+    "check": "node --check game.js",
+    "test": "node tests/game.cjs",
+    "build:dist": "node scripts/build-dist.cjs dist/web",
+    "package:itch": "node scripts/build-dist.cjs dist/itch --no-404 && rm -f dist/chankas-itch.zip && cd dist/itch && zip -qrX ../chankas-itch.zip . && echo 'dist/chankas-itch.zip listo'",
+    "docker:build": "docker build -t chankas:latest .",
+    "docker:run": "docker run --rm --name chankas -p 127.0.0.1:8080:8080 --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true chankas:latest"
+  }
+}

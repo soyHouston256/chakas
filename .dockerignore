@@ -1,0 +1,13 @@
+# Lista blanca: solo entra al contexto de build lo necesario para probar y empaquetar.
+# (data.txt, docs/, art/preview-*.html, .git, node_modules, dist/, *.png... quedan fuera.)
+*
+!package.json
+!index.html
+!style.css
+!game.js
+!ui.js
+!art/*.js
+!tests/
+!scripts/
+!deploy/
+deploy/Caddyfile

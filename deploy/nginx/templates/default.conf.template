@@ -1,0 +1,58 @@
+# Servidor estático de CHANKAS. Plantilla procesada por envsubst (solo ${FRAME_ANCESTORS},
+# ver NGINX_ENVSUBST_FILTER en el Dockerfile), así que las variables de nginx quedan intactas.
+server {
+    listen 8080 default_server;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    absolute_redirect off;      # redirecciones relativas: no filtra el puerto interno 8080
+    autoindex off;
+    etag on;
+
+    # Sitio estático: solo GET y HEAD.
+    if ($request_method !~ ^(GET|HEAD)$) {
+        return 405;
+    }
+
+    error_page 404 /404.html;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        include /tmp/conf.d/security-headers.inc;
+        add_header Cache-Control "no-store" always;
+        return 200 "ok\n";
+    }
+
+    # El HTML siempre se revalida (ETag/If-None-Match → 304 si no cambió).
+    location = /index.html {
+        include /tmp/conf.d/security-headers.inc;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location ~* \.(?:js|css)$ {
+        include /tmp/conf.d/security-headers.inc;
+        add_header Cache-Control $asset_cache_control always;
+        try_files $uri =404;
+    }
+
+    location = /404.html {
+        internal;
+        include /tmp/conf.d/security-headers.inc;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # Sin favicon propio: evita 404 ruidosos en los logs.
+    location = /favicon.ico {
+        access_log off;
+        log_not_found off;
+        include /tmp/conf.d/security-headers.inc;
+        return 204;
+    }
+
+    location / {
+        include /tmp/conf.d/security-headers.inc;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+}

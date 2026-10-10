@@ -1,0 +1,7 @@
+# Caddy en un VPS: HTTPS automático (Let's Encrypt) delante del contenedor en 127.0.0.1:8080.
+# Cambia el dominio y copia este archivo a /etc/caddy/Caddyfile.
+chankas.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy 127.0.0.1:8080
+}
