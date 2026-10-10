@@ -132,13 +132,13 @@
       b.dataset.action = "select";
       b.dataset.arg = String(i);
       b.innerHTML =
-        '<span class="mp-cord" style="background:' +
-        CORD[i % CORD.length] +
-        '"></span><span class="mp-name">' +
+        '<span class="mp-cord"></span><span class="mp-name">' +
         roman(i) +
         " · " +
         escapeHtml(name) +
         '</span><span class="mp-state"></span>';
+      // Color por CSSOM (no atributo style en el HTML): compatible con una CSP sin 'unsafe-inline'.
+      b.querySelector(".mp-cord").style.background = CORD[i % CORD.length];
       li.appendChild(b);
       el.mpList.appendChild(li);
       return { button: b, state: b.querySelector(".mp-state") };
