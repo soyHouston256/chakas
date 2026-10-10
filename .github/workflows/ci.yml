@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: npm test
+      - run: node scripts/build-dist.cjs dist/web
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (ejecuta npm test dentro de la imagen)
+        run: docker build -t chankas:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name chankas -p 8080:8080 --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges:true chankas:ci
+          for i in $(seq 1 20); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          curl -fsSI http://localhost:8080/ | tee headers.txt
+          grep -qi '^content-security-policy:' headers.txt
+          grep -qi '^x-content-type-options: nosniff' headers.txt
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/data.txt)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/docs/COORDINACION.md)" = 404
+      - name: Logs
+        if: always()
+        run: docker logs chankas || true
