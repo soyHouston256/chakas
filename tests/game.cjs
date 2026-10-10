@@ -344,7 +344,7 @@ run("reset(); player.x=850; update(.016); player.x=1200");
 calls.length = 0;
 run("draw()");
 const pilesDrawn = calls.filter((c) => c.kind === "stone_pile");
-assert.equal(pilesDrawn.length, 5);
+assert.equal(pilesDrawn.length, 6);
 assert.equal(pilesDrawn.filter((c) => c.anim === "active").length, 1);
 // Telegrafía del jefe y boleadora se dibujan con el arte.
 run(
@@ -730,6 +730,185 @@ assert.deepEqual(
 assert.equal(mv.selected, 1);
 assert.equal(run("uiAction('sound')"), true);
 assert.equal(J("uiView()").sound, true);
+// ---------------------------------------------------------------------------
+// Pulido: piquero cuerpo a cuerpo, perro con alerta y preparación, apacheta de la arena,
+// aviso del jefe, contorno del héroe en caché, mapa vertical y cartela a medida.
+run = makeGame();
+// Piquero: nunca dispara balas; se acerca, echa la pica atrás (≥0,3 s) y da la estocada.
+run(`reset(); enemies.forEach(e=>e.dead=true); var PQ=enemies[2]; PQ.dead=false; player.x=PQ.x-260; player.inv=999;
+  var tWind=-1, tThrust=-1;
+  for (let i=0;i<600;i++){ cam=Math.max(0,player.x-280); world.spit=9; update(1/60);
+    if (PQ.wind>0 && tWind<0) tWind=i; if (PQ.lunge>0 && tThrust<0) { tThrust=i; var thrAnim=PQ.anim; } }`);
+assert.equal(run("shots.filter(s=>!s.good).length"), 0);
+assert.ok(run("tWind") >= 0 && run("tThrust") > run("tWind"));
+assert.ok((run("tThrust") - run("tWind")) / 60 >= 0.33, "telegrafía visible antes de la estocada");
+assert.equal(run("thrAnim"), "thrust");
+// La estocada hiere dentro del alcance (y solo una vez)…
+run(`reset(); enemies.forEach(e=>e.dead=true); PQ=enemies[2]; PQ.dead=false; PQ.x=PQ.home=1400; player.inv=0;
+  player.x=PQ.x-40-player.w; cam=player.x-280; PQ.wdir=-1; PQ.lunge=PIQ.thrust; PQ.hitDone=false; PQ.cool=5;
+  for (let i=0;i<20;i++) update(1/60)`);
+assert.equal(run("player.hp"), 5);
+// …pero no fuera de él, ni por encima de la pica (saltando), ni detrás del piquero.
+run(`reset(); enemies.forEach(e=>e.dead=true); PQ=enemies[2]; PQ.dead=false; PQ.x=PQ.home=1400; player.inv=0;
+  player.x=PQ.x-PIQ.reach-20-player.w; cam=player.x-280; PQ.wdir=-1; PQ.lunge=PIQ.thrust; PQ.hitDone=false; PQ.cool=5;
+  for (let i=0;i<20;i++) update(1/60)`);
+assert.equal(run("player.hp"), 6);
+run("PQ.wdir=-1; var box=thrustBox(PQ)");
+assert.equal(run("overlap({x:PQ.x-40-28,y:GROUND-58,w:28,h:58}, box)"), true);
+assert.equal(run("overlap({x:PQ.x-40-28,y:GROUND-58-50,w:28,h:58}, box)"), false); // saltando
+assert.equal(run("overlap({x:PQ.x+PQ.w+10,y:GROUND-58,w:28,h:58}, box)"), false); // a su espalda
+assert.equal(run("box.w"), run("PIQ.reach"));
+// La boleadora interrumpe la preparación.
+run(`reset(); enemies.forEach(e=>e.dead=true); PQ=enemies[2]; PQ.dead=false; player.x=PQ.x-90; player.inv=999;
+  cam=player.x-280; PQ.wind=.2; PQ.wdir=-1; shots.length=0;
+  shots.push({x:PQ.x+5,y:PQ.y+20,vx:-1,vy:0,life:1,good:true,damage:1,bola:true,w:16,h:16}); update(1/60)`);
+assert.ok(run("PQ.stun > 0 && PQ.wind === 0 && PQ.lunge === 0"));
+
+// Perro: quieto hasta verse en pantalla; luego alerta, y se agacha (≥0,25 s) antes de embestir.
+run(`reset(); enemies.forEach(e=>e.dead=true); var PD=enemies[3]; PD.dead=false; player.x=1000; player.inv=999;
+  for (let i=0;i<60;i++){ update(1/60); player.x=1000; }`);
+assert.deepEqual(J("[PD.x === PD.home, PD.aggro, PD.anim]"), [true, false, "idle"]);
+run(`player.x=1400; var tw=-1, tl=-1; for (let i=0;i<300;i++){ world.spit=9; update(1/60); player.x=1400;
+  if (PD.wind>0 && tw<0) tw=i; if (PD.lunge>0 && tl<0) tl=i; }`);
+assert.equal(run("PD.aggro"), true);
+assert.ok(run("tw") >= 0 && (run("tl") - run("tw")) / 60 >= 0.25);
+// Quien camina hacia la derecha sin disparar pierde como mucho un corazón con el primer perro.
+run(`reset(); enemies.forEach((e,i)=>{ if (i) e.dead=true; }); keys.add('ArrowRight');
+  for (let i=0;i<60*6;i++) update(1/60); keys.clear()`);
+assert.ok(run("player.hp") >= 5, "primer perro: " + run("player.hp"));
+assert.ok(run("player.x") > 900);
+
+// Apacheta en la entrada de la arena: punto de reaparición y recarga justo antes del jefe.
+run("reset(); player.x=piles[ARENA_PILE]; update(1/60)");
+assert.deepEqual(J("[world.cpPile, world.checkpoint]"), [5, 3500]);
+assert.ok(run("piles[ARENA_PILE] > 3400 && piles[ARENA_PILE] < enemies[8].home"));
+run("player.ammo=0; keys.add('KeyE'); update(1/60); keys.clear()");
+assert.equal(run("player.ammo"), 24);
+// Al reaparecer allí, el jefe sube al 60 % si tenía menos…
+run("var BA=enemies[8]; BA.hp=5; player.hp=1; player.inv=0; hit(); update(1/60); respawn()");
+assert.deepEqual(J("[player.x, BA.hp, BA.x]"), [3500, Math.ceil(32 * 0.6), 3910]);
+// …y conserva su vida si tenía más.
+run("BA.hp=25; player.hp=1; player.inv=0; hit(); update(1/60); respawn()");
+assert.equal(run("BA.hp"), 25);
+
+// Aviso del jefe: expone la altura del disparo y dura al menos 0,42 s en ambas fases.
+run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var BT=enemies[8]; player.x=3600; player.inv=999;
+  cam=player.x-280; BT.x=3900; BT.cool=0; BT.shotN=1; update(1/60)`);
+assert.deepEqual(J("[bossTelegraph(BT).height, bossTelegraph(BT).dir]"), ["high", -1]);
+assert.equal(run("bossTelegraph(BT).y"), run("BT.y + 22"));
+assert.ok(run("BOSS_WIND >= 0.42 && BOSS_WIND_P2 >= 0.42"));
+run("BT.pat='low'");
+assert.equal(run("bossTelegraph(BT).height"), "low");
+run("BT.wind=0");
+assert.equal(run("bossTelegraph(BT)"), null);
+// El disparo sale a la altura anunciada.
+run("BT.wind=.01; BT.pat='low'; BT.wdir=-1; shots.length=0; update(1/60)");
+assert.equal(run("shots.filter(s=>!s.good)[0].y"), run("BT.y + 55"));
+
+// Con arte (stubs): el héroe pide contorno claro; los enemigos no. Con «reducir movimiento»
+// el aviso del jefe no parpadea (el cuerpo se ilumina en todos los fotogramas).
+const calls2 = [];
+const SP2 = {
+  draw(c, kind, anim, t, x, y, o) {
+    calls2.push({ kind, flash: o.flash, outline: o.outline });
+    return true;
+  },
+  size: () => ({ w: 16, h: 16, anchor: "center" }),
+  duration: () => 0.4,
+};
+run = makeGame({ ChankasSprites: SP2, matchMedia: () => ({ matches: true }) });
+run("reset(); draw()");
+assert.ok(calls2.some((c) => c.kind === "hero" && c.outline === run("HERO_RIM")));
+assert.ok(calls2.filter((c) => c.kind !== "hero").every((c) => !c.outline));
+run("enemies.slice(0,8).forEach(e=>e.dead=true); var BR=enemies[8]; BR.pat='low'; BR.wdir=-1");
+let lit = 0;
+for (let i = 0; i < 12; i++) {
+  calls2.length = 0;
+  run("BR.wind = " + (0.55 - i * 0.04) + "; draw()");
+  if (calls2.some((c) => c.kind === "capitan" && c.flash)) lit++;
+}
+assert.equal(lit, 12);
+
+// Sprites reales: el contorno se pre-renderiza una sola vez por fotograma y color.
+(function () {
+  let created = 0;
+  const fake2d = () => ({
+    createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+    putImageData() {},
+  });
+  const ctx = {
+    console, Math, Uint8ClampedArray, parseInt,
+    document: { createElement: () => (created++, { width: 0, height: 0, getContext: fake2d }) },
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync("art/sprites.js", "utf8"), ctx);
+  const S = ctx.ChankasSprites;
+  const draws = [];
+  const g = new Proxy({}, { get: (t, k) => (k in t ? t[k] : k === "drawImage" ? (...a) => draws.push(a) : () => {}), set: (t, k, v) => ((t[k] = v), true) });
+  const o = { facing: 1, outline: "#f6e3a6", w: 28, h: 58 };
+  S.draw(g, "hero", "idle", 0, 0, 0, o);
+  const after1 = created, rims = S._rimsBuilt();
+  assert.equal(rims, 1);
+  assert.equal(draws.length, 2); // contorno + sprite
+  for (let i = 0; i < 50; i++) S.draw(g, "hero", "idle", 0, 0, 0, o);
+  assert.equal(created, after1); // sin nuevos lienzos por fotograma
+  assert.equal(S._rimsBuilt(), 1);
+  S.draw(g, "hero", "idle", 0, 0, 0, { facing: 1 });
+  assert.equal(S._rimsBuilt(), 1); // sin contorno pedido, no se construye
+  const rim = draws[0][0];
+  assert.equal(rim.width === undefined || rim.width >= 0, true);
+})();
+
+// Mapa: cartela a la medida del texto (nunca recorta) y encuadre vertical en móvil.
+const fakeMeasure = (t, px) => t.length * px * 0.62;
+let cl = RM.cartoucheLayout(fakeMeasure, 300, 1);
+assert.ok(cl.w <= 300 && cl.textW + 28 <= cl.w && cl.w % 3 === 0 && cl.f1 === 15);
+assert.ok(fakeMeasure(cl.t1, cl.f1) + 4 <= cl.w - 28);
+cl = RM.cartoucheLayout(fakeMeasure, 180, 1); // estrecho: reduce la letra hasta caber
+assert.ok(cl.f1 < 15 && cl.w <= 180 && fakeMeasure(cl.t1, cl.f1) + 4 + 28 <= cl.w);
+assert.ok(cl.f2 <= cl.f1 && cl.h > cl.f1 + cl.f2);
+cl = RM.cartoucheLayout(fakeMeasure, 300, 1.15);
+assert.ok(cl.w <= 300 && fakeMeasure(cl.t1, cl.f1) + 32 <= cl.w);
+assert.equal(RM.viewFor({ width: 780, height: 1040 }).layout, "portrait");
+assert.equal(RM.viewFor({ width: 960, height: 540 }).layout, "landscape");
+assert.equal(RM.viewFor({ width: 960, height: 540 }).sc, 1);
+const PORT = { width: 780, height: 1040, layout: "portrait" };
+assert.equal(RM.viewFor(PORT).sc, 2);
+RM.stages.forEach((s, i) => {
+  const [x, y] = RM.toScreen(s.node[0], s.node[1] - 8, PORT);
+  assert.ok(x > 0 && x < 780 && y > 0 && y < 1040, "etapa visible en vertical: " + s.id);
+  assert.equal(RM.stageAt(x, y, PORT), i);
+  // el rótulo (debajo del icono) también selecciona la etapa
+  const [lx, ly] = RM.toScreen(s.node[0], s.node[1] + 32, PORT);
+  assert.equal(RM.stageAt(lx, ly, PORT), i, "rótulo " + s.id);
+});
+assert.equal(RM.stageAt(5, 5, PORT), -1);
+// Perú completo dentro del encuadre vertical (norte y sur del país).
+for (const [lat, lon] of [[-0.1, -75.2], [-18.3, -70.4], [-4.5, -81.3], [-10, -70.6]]) {
+  const p = RM.project(lat, lon), [x, y] = RM.toScreen(p.x, p.y, PORT);
+  assert.ok(x >= 0 && x <= 780 && y >= 0 && y <= 1040, "Perú en vertical: " + lat + "," + lon);
+}
+
+// Juego + interfaz en un escenario estrecho: el canvas pasa a 780×1040 en el mapa, el toque
+// se escala con el tamaño real del canvas y selecciona la etapa; al jugar vuelve a 960×540.
+run = makeGame({
+  ChankasUI: { ready: true, init() {}, sync() {}, menuKey: () => false },
+  ChankasMap: { ...MAPSTUB, draw: (c, t, o) => (RM.draw(c, t, o), true) },
+  localStorage: memStorage(),
+});
+run("canvas.dataset = {}; stageW = 390; uiAction('map'); drawMap()");
+assert.deepEqual(J("[canvas.width, canvas.height, canvas.dataset.layout]"), [780, 1040, "portrait"]);
+run("canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: 390, height: 520 })");
+assert.deepEqual(J("canvasPoint({ clientX: 10 + 195, clientY: 20 + 260 })"), [390, 520]);
+const [tx, ty] = RM.toScreen(RM.stages[3].node[0], RM.stages[3].node[1] - 8, PORT);
+run(`mapPointer(...canvasPoint({ clientX: 10 + ${tx} / 2, clientY: 20 + ${ty} / 2 }))`);
+assert.equal(run("mapS.selected"), 3);
+run("stageW = 1200; drawMap()");
+assert.deepEqual(J("[canvas.width, canvas.height, canvas.dataset.layout]"), [960, 540, "landscape"]);
+run("stageW = 390; drawMap(); uiAction('select', 0); uiAction('select', 0); fitCanvas()");
+assert.deepEqual(J("[state, canvas.width, canvas.height, canvas.dataset.layout]"), ["playing", 960, 540, "landscape"]);
+
 console.log(
-  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones).",
+  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones), pulido (piquero cuerpo a cuerpo, perro con alerta, apacheta de la arena, aviso del jefe, contorno del héroe, mapa vertical, cartela).",
 );

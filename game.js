@@ -55,7 +55,11 @@ const RESPAWN_AMMO = 12,
 const LLAMA_LOADS = 5,
   LLAMA_REFILL = 8,
   LLAMA_RANGE = 120;
-const piles = [180, 850, 1600, 2450, 3200];
+// La última apacheta está en la entrada de la arena del capitán: punto de reaparición
+// y recarga justo antes del jefe (ARENA_PILE).
+const piles = [180, 850, 1600, 2450, 3200, 3500];
+const ARENA_PILE = piles.length - 1,
+  BOSS_RESPAWN_HP = 0.6; // al reaparecer en la arena, el jefe recupera hasta el 60 % si tenía menos
 const platforms = [
   { x: 580, y: 350, w: 180 },
   { x: 1250, y: 340, w: 200 },
@@ -153,8 +157,8 @@ function reset() {
   restartBtn.hidden = true;
 }
 // Revivir en la última apacheta activada: los enemigos derrotados siguen derrotados,
-// los vivos vuelven a su puesto (el jefe conserva el daño recibido) y la munición
-// sube a un mínimo razonable.
+// los vivos vuelven a su puesto (el jefe conserva el daño recibido, salvo en la apacheta
+// de la arena: allí recupera hasta el 60 %) y la munición sube a un mínimo razonable.
 function respawn() {
   world.deaths++;
   Object.assign(player, {
@@ -184,6 +188,12 @@ function respawn() {
     e.wind = 0;
     e.lunge = 0;
     e.flash = 0;
+    e.aggro = false;
+    e.hitDone = false;
+    // En la apacheta de la arena, el capitán recupera el aliento: hasta el 60 % de su vida
+    // (si tenía más, la conserva). En las demás apachetas conserva el daño recibido.
+    if (e.type === 3 && world.cpPile === ARENA_PILE)
+      e.hp = Math.max(e.hp, Math.ceil(e.max * BOSS_RESPAWN_HP));
     restartAnim(e, "");
   }
   shots = [];
@@ -215,6 +225,9 @@ function animFields() {
     shotN: 0,
     pat: "",
     wdir: -1,
+    pdir: -1, // piquero: sentido de la patrulla
+    hitDone: false, // piquero: la estocada en curso ya hirió
+    aggro: false, // perro: ya vio al héroe
   };
 }
 // Cambia de animación solo si es distinta (reinicia el temporizador de la acción).
@@ -393,7 +406,7 @@ function burst(x, y, color, n = 12) {
 // Fuera de "playing" no hace nada: si el jefe cae en el mismo frame, gana la victoria.
 // La derrota se resuelve al final de update() (ver resolveDeath).
 function hit(srcX, push = 260) {
-  if (state !== "playing" || player.inv > 0 || player.hp <= 0) return;
+  if (state !== "playing" || player.inv > 0 || player.hp <= 0) return false;
   player.hp--;
   player.inv = 1.5;
   player.flash = 0.12;
@@ -409,6 +422,7 @@ function hit(srcX, push = 260) {
   restartAnim(player, player.hp <= 0 ? "dead" : "hurt");
   burst(player.x, player.y, "#e9b25f");
   tone(130);
+  return true;
 }
 function resolveDeath() {
   if (state !== "playing" || player.hp > 0) return;
@@ -623,7 +637,6 @@ function update(dt) {
       continue;
     }
     const dir = player.x > e.x ? 1 : -1;
-    const prevX = e.x;
     e.cool -= dt;
     e.animT += dt;
     e.flash -= dt;
@@ -634,21 +647,26 @@ function update(dt) {
       e.lunge = 0;
       setAnim(e, e.type === 3 ? "hurt" : "stunned");
     } else if (e.type === 0) updateDog(e, dir, dt, touching);
+    else if (e.type === 2) updatePiquero(e, dir, dt, touching);
     else {
-      if (e.type === 2) e.x = e.home + Math.sin(world.time * 1.8) * 85;
-      else if (e.type === 3 && !touching && e.wind <= 0) e.x += dir * 45 * dt;
-      enemyAnim(e, dir, prevX);
+      if (e.type === 3 && !touching && e.wind <= 0) e.x += dir * 45 * dt;
+      enemyAnim(e, dir);
       if (e.type === 3) updateBoss(e, dir, dt);
       else if (e.cool <= 0 && canFire(e)) {
-        e.cool = e.type === 1 ? 1.8 : 2.5;
+        // Arcabucero: el único soldado que dispara balas.
+        e.cool = 1.8;
         e.face = dir;
         restartAnim(e, ENEMY_ATTACK[e.type]);
-        if (e.type === 1)
-          spawnFx("muzzle_flash", "burst", dir > 0 ? e.x + e.w + 6 : e.x - 6, e.y + 20, dir);
+        spawnFx("muzzle_flash", "burst", dir > 0 ? e.x + e.w + 6 : e.x - 6, e.y + 20, dir);
         shots.push({ x: e.x, y: e.y + 22, vx: dir * 240, vy: 0, life: 3, good: false });
       }
     }
-    if (touching) hit(e.x + e.w / 2, e.type === 3 ? 340 : 260);
+    if (touching && hit(e.x + e.w / 2, e.type === 3 ? 340 : 260) && e.type === 0) {
+      // El perro que muerde se aparta un rato (no encadena mordiscos).
+      e.cool = DOG.sated;
+      e.lunge = 0;
+      e.wind = 0;
+    }
     if (Math.abs(e.x - world.llama) < 240 && world.spit <= 0) {
       // La llama escupe hacia el enemigo, no hacia donde mira el héroe.
       const sdir = e.x + e.w / 2 >= world.llama + 12 ? 1 : -1;
@@ -712,27 +730,134 @@ function update(dt) {
   resolveDeath();
 }
 // Perro alano: corre hacia el héroe y muerde con una embestida corta (sin balas).
-const DOG = { speed: 70, range: 150, lunge: 0.36, lungeV: 400, cool: 1.3 };
+// Solo se activa al verse en pantalla (tras un instante de «alerta»), se agacha antes de
+// embestir (wind) y, si muerde, se aparta un rato: quien sigue caminando pierde como mucho
+// un corazón con él.
+const DOG = {
+  speed: 70,
+  range: 150,
+  notice: 0.7, // alerta al entrar en pantalla antes de correr
+  wind: 0.28, // agachado antes de embestir
+  lunge: 0.36,
+  lungeV: 400,
+  cool: 1.3,
+  sated: 2.6, // tras morder: pausa larga antes de volver a embestir
+};
 function updateDog(e, dir, dt, touching) {
   if (e.lunge > 0) {
     e.lunge -= dt;
     e.x += e.lvx * dt;
     return;
   }
-  e.face = dir;
-  const dx = Math.abs(e.x + e.w / 2 - (player.x + player.w / 2));
-  if (e.cool <= 0 && dx < DOG.range && canFire(e)) {
+  if (e.wind > 0) {
+    // Preparación visible: agachado (primer fotograma de 'lunge'), sin moverse.
+    e.wind -= dt;
+    e.face = e.wdir;
+    e.animT = 0;
+    if (e.wind > 0) return;
     e.lunge = DOG.lunge;
-    e.lvx = dir * DOG.lungeV;
+    e.lvx = e.wdir * DOG.lungeV;
     e.cool = DOG.cool + DOG.lunge;
-    restartAnim(e, "lunge");
+    e.animT = 1 / 8; // salta al fotograma del salto
     spawnFx("dust", "puff", e.x + e.w / 2, e.y + e.h - 4);
     tone(240);
+    return;
+  }
+  if (!e.aggro) {
+    // Quieto (sentado) hasta verse en pantalla; luego un instante de alerta.
+    setAnim(e, "idle");
+    if (!canFire(e)) return;
+    e.aggro = true;
+    e.cool = Math.max(e.cool, DOG.notice);
+    e.face = dir;
+    return;
+  }
+  if (e.cool > DOG.cool + DOG.lunge) {
+    // Recién ha mordido: se aparta trotando antes de volver a la carga.
+    e.face = -dir;
+    e.x -= dir * 60 * dt;
+    setAnim(e, "run");
+    return;
+  }
+  e.face = dir;
+  const dx = Math.abs(e.x + e.w / 2 - (player.x + player.w / 2));
+  if (e.cool <= 0 && dx < DOG.range && canFire(e) && player.hp > 0) {
+    e.wind = DOG.wind;
+    e.wdir = dir;
+    restartAnim(e, "lunge");
     return;
   }
   // Tras morder se queda un instante quieto (ventana para contraatacar).
   if (!touching && e.cool < DOG.cool - 0.45) e.x += dir * DOG.speed * dt;
   if (e.anim !== "lunge" || e.animT > animDur("perro", "lunge", 0.375)) setAnim(e, "run");
+}
+// Piquero: cuerpo a cuerpo con la pica (sin balas). Patrulla; al ver al héroe se acerca,
+// anuncia la estocada echando la pica atrás (PIQ.wind) y la lanza con un alcance largo
+// por delante. Se puede saltar por encima o interrumpir con la boleadora.
+const PIQ = {
+  aggro: 320, // distancia (centros) a la que deja de patrullar
+  speed: 62,
+  patrol: 85, // semiancho de la patrulla alrededor de su puesto
+  leash: 240, // no persigue más allá de su puesto ± leash
+  reach: 64, // alcance de la pica por delante del cuerpo
+  wind: 0.35, // retroceso visible antes de la estocada
+  thrust: 0.3, // duración de la estocada
+  active: [0.05, 0.24], // ventana con daño dentro de la estocada
+  cool: 1.4,
+};
+// Caja de daño de la pica: franja a la altura de la cintura del héroe, delante del cuerpo.
+function thrustBox(e) {
+  const d = e.wdir >= 0 ? 1 : -1;
+  return { x: d > 0 ? e.x + e.w : e.x - PIQ.reach, y: e.y + e.h - 42, w: PIQ.reach, h: 20 };
+}
+function updatePiquero(e, dir, dt, touching) {
+  if (e.lunge > 0) {
+    // Estocada en curso: solo hiere una vez y dentro de su ventana activa.
+    e.lunge -= dt;
+    e.face = e.wdir;
+    const t = PIQ.thrust - e.lunge;
+    if (!e.hitDone && t >= PIQ.active[0] && t <= PIQ.active[1] && overlap(player, thrustBox(e))) {
+      e.hitDone = true;
+      hit(e.x + e.w / 2, 300);
+    }
+    if (e.lunge <= 0) e.cool = PIQ.cool;
+    return;
+  }
+  if (e.wind > 0) {
+    e.wind -= dt;
+    e.face = e.wdir;
+    e.animT = 0; // pica atrás (primer fotograma de 'thrust')
+    if (e.wind > 0) return;
+    e.lunge = PIQ.thrust;
+    e.hitDone = false;
+    e.animT = 0.1; // fotogramas de empuje
+    tone(200);
+    return;
+  }
+  const pc = player.x + player.w / 2,
+    ec = e.x + e.w / 2;
+  const gap = dir > 0 ? player.x - (e.x + e.w) : e.x - (player.x + player.w);
+  if (player.hp > 0 && canFire(e) && Math.abs(pc - ec) < PIQ.aggro) {
+    e.face = dir;
+    if (e.cool <= 0 && gap < PIQ.reach - 14) {
+      e.wind = PIQ.wind;
+      e.wdir = dir;
+      restartAnim(e, "thrust");
+      return;
+    }
+    const nx = e.x + dir * PIQ.speed * dt;
+    if (!touching && gap > PIQ.reach - 26 && Math.abs(nx - e.home) < PIQ.leash) {
+      e.x = nx;
+      setAnim(e, "walk");
+    } else if (e.anim !== "thrust" || e.animT > animDur("piquero", "thrust", 0.4)) setAnim(e, "idle");
+    return;
+  }
+  // Patrulla de ida y vuelta alrededor de su puesto.
+  if (e.x < e.home - PIQ.patrol) e.pdir = 1;
+  else if (e.x > e.home + PIQ.patrol) e.pdir = -1;
+  e.x += e.pdir * 40 * dt;
+  e.face = e.pdir;
+  setAnim(e, "walk");
 }
 // Capitán: anuncia cada disparo (pose 'shoot' + destello + marca de altura) y alterna
 // disparos altos (quedarse en el suelo) y bajos (saltar). Fase 2 con <50 % de vida.
@@ -771,17 +896,24 @@ function updateBoss(e, dir, dt) {
   }
 }
 const ENEMY_ATTACK = ["lunge", "fire", "thrust", "shoot"];
-function enemyAnim(e, dir, prevX) {
+// Estado del aviso del jefe (puro, lo usan el dibujo y las pruebas): altura del disparo
+// ('high' = quédate en el suelo, 'low' = salta), y del cañón, sentido y tiempo restante.
+function bossTelegraph(e) {
+  if (!e || e.type !== 3 || e.dead || !(e.wind > 0)) return null;
+  return {
+    height: e.pat === "high" ? "high" : "low",
+    y: e.pat === "high" ? e.y + 22 : e.y + 55,
+    dir: e.wdir >= 0 ? 1 : -1,
+    left: e.wind,
+  };
+}
+// Arcabucero y capitán (el perro y el piquero animan en su propia actualización).
+function enemyAnim(e, dir) {
   if (e.type === 3 && e.wind > 0) return; // preparando disparo: mantiene la pose
   const busy = e.animT < animDur(ENEMY_KIND[e.type], e.anim, 0.4);
-  if (e.type === 2) {
-    // patrulla: mira hacia donde camina salvo mientras ataca
-    if (!(e.anim === "thrust" && busy) && e.x !== prevX) e.face = e.x > prevX ? 1 : -1;
-  } else e.face = dir;
+  e.face = dir;
   if (e.anim === ENEMY_ATTACK[e.type] && busy) return;
-  if (e.type === 0) setAnim(e, "run");
-  else if (e.type === 1) setAnim(e, e.cool > 0.6 ? "reload" : "aim");
-  else if (e.type === 2) setAnim(e, "walk");
+  if (e.type === 1) setAnim(e, e.cool > 0.6 ? "reload" : "aim");
   else if (Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < 90) {
     if (e.anim !== "slash" || !busy) restartAnim(e, "slash");
   } else setAnim(e, "walk");
@@ -1043,29 +1175,65 @@ function drawEnemies(flying) {
       SPR.rotation = e.rot;
       sprite(ENEMY_KIND[e.type], e.anim || "idle", e.animT, e.x, e.y, e.w, e.h, e.face);
     } else person(e.x, e.y + e.h - (e.type === 3 ? 96 : 48), e.type);
-    if (e.type === 3 && !e.dead && e.wind > 0) drawTelegraph(e);
+    if (e.type === 2 && !e.dead && e.wind > 0) drawPikeGlint(e);
     if (e.type === 3 && !e.dead) {
       rect(e.x - 10, e.y - 20, 110, 7, "#342f2a");
       rect(e.x - 10, e.y - 20, (110 * e.hp) / e.max, 7, "#db7052");
     }
+    if (e.type === 3 && !e.dead && e.wind > 0) drawTelegraph(e);
   }
 }
-// Aviso del jefe: el cuerpo parpadea y una marca indica la altura del disparo
-// (alto = quédate en el suelo, bajo = salta).
+function reducedMotion() {
+  return !!(REDUCED_MOTION && REDUCED_MOTION.matches);
+}
+// Aviso del jefe durante toda la preparación (≥0,42 s): globo «!» de píxel (oro sobre
+// oscuro, borde de 2 px como la interfaz) sobre su cabeza y una flecha a la altura del
+// disparo (alta = quédate en el suelo, baja = salta). El cuerpo se ilumina; con
+// «reducir movimiento» la luz es fija (sin parpadeo).
 function drawTelegraph(e) {
-  const on = Math.floor(e.wind * 14) % 2 === 0;
-  const y = e.pat === "high" ? e.y + 22 : e.y + 55;
-  const x = e.wdir > 0 ? e.x + e.w + 4 : e.x - 22;
+  const tg = bossTelegraph(e);
+  if (!tg) return;
+  const steady = reducedMotion(),
+    on = steady || Math.floor(tg.left * 8) % 2 === 0;
   if (SP && on) {
     resetSpr();
     SPR.flash = true;
-    SPR.alpha = 0.55;
+    SPR.alpha = steady ? 0.35 : 0.5;
     sprite("capitan", e.anim || "shoot", e.animT, e.x, e.y, e.w, e.h, e.face);
   }
-  rect(x, y - 2, 18, 12, on ? "#ffdf6b" : "#d9472f");
-  ctx.fillStyle = "#1b1410";
-  ctx.font = "bold 12px sans-serif";
-  ctx.fillText("!", x + 7, y + 8);
+  // Globo: 34×42 con pico hacia el capitán, encima de la barra de vida.
+  const bx = Math.round(e.x + e.w / 2 - 17),
+    by = Math.round(e.y - 74);
+  rect(bx, by, 34, 42, "#E9B53B");
+  rect(bx + 2, by + 2, 30, 38, "#0B080D");
+  rect(bx + 12, by + 42, 10, 2, "#E9B53B");
+  rect(bx + 14, by + 44, 6, 2, "#E9B53B");
+  rect(bx + 16, by + 46, 2, 2, "#E9B53B");
+  rect(bx + 13, by + 7, 8, 18, "#F2C14E");
+  rect(bx + 13, by + 7, 2, 18, "#FFE79A");
+  rect(bx + 13, by + 29, 8, 7, "#F2C14E");
+  // Flecha a la altura del disparo, delante del cañón.
+  const d = tg.dir,
+    x0 = d > 0 ? e.x + e.w + 2 : e.x - 2,
+    y = Math.round(tg.y + 2),
+    len = 40;
+  const lx = d > 0 ? x0 : x0 - len;
+  rect(lx - 1, y - 3, len + 2, 8, "#0B080D");
+  rect(lx, y - 1, len, 4, "#E9B53B");
+  for (let i = 0; i < 4; i++) {
+    const ax = d > 0 ? x0 + len + i * 2 : x0 - len - i * 2 - 2;
+    rect(ax, y - 7 + i * 2, 2, 16 - i * 4, "#0B080D");
+    if (i < 3) rect(ax, y - 5 + i * 2, 2, 12 - i * 4, "#E9B53B");
+  }
+}
+// Piquero preparando la estocada: brillo en la punta de la pica echada atrás.
+function drawPikeGlint(e) {
+  if (!reducedMotion() && Math.floor(e.wind * 16) % 2) return;
+  const cx = e.x + e.w / 2 + e.wdir * 44,
+    cy = e.y + e.h - 33;
+  rect(cx - 4, cy - 1, 8, 2, "#FFF5B8");
+  rect(cx - 1, cy - 4, 2, 8, "#FFF5B8");
+  rect(cx - 1, cy - 1, 2, 2, "#ffffff");
 }
 function drawPlayer() {
   const blink = player.inv > 0 && Math.floor(player.inv * 10) % 2 !== 0;
