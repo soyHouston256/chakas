@@ -41,7 +41,7 @@ server {
     }
 
     # JS/CSS con hash de contenido en el nombre (scripts/build-dist.cjs): inmutables.
-    location ~* \.[0-9a-f]{12}\.(?:js|css)$ {
+    location ~* "\.[0-9a-f]{12}\.(js|css)$" {
         include /tmp/conf.d/security-headers.inc;
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         try_files $uri =404;

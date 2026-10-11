@@ -27,8 +27,10 @@ RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf \
  && chown -R root:root /etc/nginx \
  && chmod -R go-w /etc/nginx
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY deploy/nginx/templates/default.conf.template /etc/nginx/conf.d/default.conf
 COPY deploy/nginx/templates/ /etc/nginx/templates/
 COPY --chmod=0755 deploy/nginx/15-chankas-prepare.sh /docker-entrypoint.d/15-chankas-prepare.sh
+RUN rm -f /etc/nginx/templates/default.conf.template
 COPY --from=build /dist/ /usr/share/nginx/html/
 USER 101
 

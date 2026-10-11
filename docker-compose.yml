@@ -3,12 +3,11 @@ services:
     build: .
     image: chankas:latest
     container_name: chankas
-    # Solo en localhost: en un VPS, Caddy (u otro proxy con TLS) es quien expone el puerto 443.
-    ports:
-      - "127.0.0.1:8080:8080"
     environment:
       FRAME_ANCESTORS: "'self'"
     restart: unless-stopped
+    networks:
+      - traefik-public
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -22,3 +21,7 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+
+networks:
+  traefik-public:
+    external: true
