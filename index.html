@@ -76,6 +76,13 @@
               </span>
             </div>
           </div>
+          <div class="hud-block hud-spit">
+            <span class="hud-label" aria-hidden="true">ESCUPITAJOS</span>
+            <div class="spit-row">
+              <div class="spit-pips" id="hud-spit" role="img" aria-label="Escupitajos de la llama: 3 de 3"></div>
+              <span class="spit-key" aria-hidden="true"><kbd>H</kbd> ESCUPIR</span>
+            </div>
+          </div>
           <div class="hud-block">
             <span class="hud-label" aria-hidden="true">CARGA DE LA LLAMA</span>
             <div class="pips" id="hud-loads" role="img" aria-label="Carga de la llama: 5 de 5"></div>
@@ -184,10 +191,18 @@
                       <span class="inv-count" id="pause-bola">3</span>
                       <kbd>L</kbd>
                     </li>
+                    <li>
+                      <svg class="llama-ico" width="36" height="36" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v2H6zM9 2h1v1H9zM6 3h2v2H6zM1 5h7v2H1zM0 5h1v1H0zM1 7h1v3H1zM3 7h1v3H3zM5 7h1v3H5zM7 7h1v3H7z"/><rect x="7" y="1" width="1" height="1" fill="#16121A"/></svg>
+                      <span>Escupitajos de la llama</span>
+                      <span class="inv-count"><span id="pause-spit">3</span><span class="dim">/3</span></span>
+                      <kbd>H</kbd>
+                    </li>
                   </ul>
                   <p class="pause-hint">
                     Acércate a tu llama y pulsa <kbd>E</kbd> para recargar piedras. Su carga baja con
                     cada recarga (<span id="pause-loads">5 de 5</span>) y se repone en cada apacheta.
+                    Pulsa <kbd>H</kbd> y tu llama escupe al enemigo más cercano: recupera un
+                    escupitajo cada 6 segundos.
                   </p>
                 </div>
               </div>
@@ -240,6 +255,9 @@
           ><button type="button" tabindex="-1" data-key="KeyJ">Huaraca</button
           ><button type="button" tabindex="-1" data-key="KeyK">Fuego</button
           ><button type="button" tabindex="-1" data-key="KeyL">Bola</button
+          ><button type="button" tabindex="-1" data-key="KeyH" class="touch-spit" id="touch-spit" aria-label="Escupitajo de la llama"
+            ><svg class="llama-ico" width="24" height="24" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v2H6zM9 2h1v1H9zM6 3h2v2H6zM1 5h7v2H1zM0 5h1v1H0zM1 7h1v3H1zM3 7h1v3H3zM5 7h1v3H5zM7 7h1v3H7z"/><rect x="7" y="1" width="1" height="1" fill="#16121A"/></svg
+            ><span>Llama</span><span class="touch-count" id="touch-spit-count" aria-hidden="true">3</span></button
           ><button type="button" tabindex="-1" data-key="KeyE">Recargar</button
           ><button type="button" tabindex="-1" data-action="pause" class="touch-pause">Pausa</button>
         </div>
@@ -262,6 +280,7 @@
         <span class="ctl"><kbd>J</kbd><span>huaraca</span></span>
         <span class="ctl"><kbd>K</kbd><span>piedra incendiaria</span></span>
         <span class="ctl"><kbd>L</kbd><span>boleadora</span></span>
+        <span class="ctl"><kbd>H</kbd><span>escupitajo de la llama</span></span>
         <span class="ctl"><kbd>E</kbd><span>recargar</span></span>
         <span class="ctl"><kbd>P</kbd><span>pausa</span></span>
         <span class="ctl"><kbd>ENTER</kbd><span>jugar etapa</span></span>

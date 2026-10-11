@@ -225,6 +225,23 @@
     return pts;
   }
   function dots(g, pts, c) { for (var i = 0; i < pts.length; i++) g.set(pts[i][0], pts[i][1], c); }
+  // Escupitajo de la llama en la cara (x, y = centro). lvl 3 = recién llegado … 0 = solo gotas
+  // que salen volando al sacudir la cabeza. k agranda la mancha (capitán).
+  function splatFace(g, x, y, lvl, k) {
+    k = k || 1;
+    if (lvl >= 3) {
+      g.ellipse(x, y, 2.2 * k, 1.7 * k, 'p'); g.set(x + 1, y - 1, 'x');
+      g.set(x - 1, y + 2 * k, 'P'); g.set(x - 1, y + 2 * k + 1, 'P');
+      g.set(x + 3 * k + 1, y - 2, 'p'); g.set(x - 3 * k, y - 1, 'p');
+    } else if (lvl === 2) {
+      g.ellipse(x, y, 1.6 * k, 1.2 * k, 'p'); g.set(x - 1, y + 2, 'P');
+      g.set(x + 3 * k, y - 2, 'p');
+    } else if (lvl === 1) {
+      g.line(x - 2 * k, y + 1, x + 2 * k, y + 1, 'P', 1); g.set(x + 1, y, 'p');
+    } else {
+      g.set(x + 4 * k, y - 3, 'p'); g.set(x - 4 * k, y - 2, 'p'); g.set(x + 5 * k, y, 'P');
+    }
+  }
   // Estrellitas de aturdimiento orbitando.
   function stars(g, cx, cy, i, rx) {
     for (var k = 0; k < 3; k++) {
@@ -595,6 +612,18 @@
     var ca = Math.cos(deg * DEG), sa = Math.sin(deg * DEG);
     return { hb: [bx + ca * 4, by + sa * 4], hf: [bx + ca * 10, by + sa * 10 + 1] };
   }
+  // Soldado escupido (0,5 s): retrocede con la mancha en la cara, se limpia con la mano y
+  // sacude la cabeza, indignado. item = arma sujeta con la otra mano.
+  function soldierSpat(i, item) {
+    var F = [
+      { bx: -2, lean: -2, hdx: -1, hf: [21, 26] },
+      { bx: -1, lean: -1, hdx: 0, hf: [19, 19] },
+      { bx: -1, lean: -1, hdx: 1, hf: [23, 19] },
+      { bx: 0, lean: 0, hdx: -1, hf: [24, 31] }
+    ][i];
+    var hx = 17 + F.bx + F.lean + F.hdx, hy = 17;
+    return { bx: F.bx, lean: F.lean, hdx: F.hdx, fb: [15, 38], ff: [24, 38], hb: [16, 31], hf: F.hf, item: item, after: function (g) { splatFace(g, hx + 3, hy + 2, 3 - i); } };
+  }
   var ARC = { W: 48, H: 40, oy: 0, sleeve: ['d', 'D'], hose: ['d', 'D'], breech: ['d', 'E'], torso: torsoArc };
   function arcPose(anim, i) {
     var p, gh;
@@ -621,6 +650,8 @@
         };
       case 'stunned':
         return { bx: [0, 1, 0, -1][i], hdy: 1, fb: [16, 38], ff: [23, 38], hb: [16, 31], hf: [24, 32], item: arquebus(17, 29, 35, i), after: function (g) { stars(g, 19 + [0, 1, 0, -1][i], 9, i, 6); } };
+      case 'spat':
+        return soldierSpat(i, arquebus(17, 29, 35, i));
       case 'hit':
         return { bx: -2, lean: -2, fb: [15, 37], ff: [25, 35 - i], hb: [12, 15], hf: [27, 15 + i], hdx: -1 };
     }
@@ -645,6 +676,7 @@
       fire: A(3, 10, false, soldierBuild(ARC, arcPose, 'fire')),
       reload: A(6, 4, true, soldierBuild(ARC, arcPose, 'reload')),
       stunned: A(4, 6, true, soldierBuild(ARC, arcPose, 'stunned')),
+      spat: A(4, 8, false, soldierBuild(ARC, arcPose, 'spat')),
       hit: A(2, 10, true, soldierBuild(ARC, arcPose, 'hit')),
       dead: A(1, 1, false, soldierBuild(ARC, arcPose, 'dead'))
     }
@@ -682,6 +714,8 @@
         return mix({ bx: cfg[0], lean: cfg[1], fb: [13 + cfg[0], 38], ff: [25 + cfg[0], 38], item: pike(cfg[2], 28, 0, i === 2) }, pikeHands(cfg[2], 28, 0, 13, 19));
       case 'stunned':
         return { bx: [0, 1, 0, -1][i], hdy: 1, fb: [16, 38], ff: [23, 38], hb: [16, 31], hf: [23, 31], item: pike(6, 38, -60 - i * 3), after: function (g) { stars(g, 19 + [0, 1, 0, -1][i], 9, i, 6); } };
+      case 'spat':
+        return soldierSpat(i, pike(6, 38, -60));
       case 'hit':
         return { bx: -2, lean: -2, fb: [15, 37], ff: [25, 35 - i], hb: [12, 15], hf: [27, 15 + i], hdx: -1 };
     }
@@ -693,6 +727,7 @@
       walk: A(6, 8, true, soldierBuild(PIQ, piqPose, 'walk')),
       thrust: A(4, 10, false, soldierBuild(PIQ, piqPose, 'thrust')),
       stunned: A(4, 6, true, soldierBuild(PIQ, piqPose, 'stunned')),
+      spat: A(4, 8, false, soldierBuild(PIQ, piqPose, 'spat')),
       hit: A(2, 10, true, soldierBuild(PIQ, piqPose, 'hit')),
       dead: A(1, 1, false, soldierBuild(PIQ, piqPose, 'dead'))
     }
@@ -854,6 +889,24 @@
         return { bx: 2, lean: 4, by: [0, 1, 0, -1][i], flare: 8, fs: 3, ff: [39 + f1[0], f1[1]], fb: [35 + f2[0], f2[1]], hb: [26, 46 + i % 2], hf: [52, 46], after: function (g, af) { sword(af[2], af[3], -4)(g); } };
       case 'hurt':
         return { bx: -2, lean: -3, fs: 3, fb: [31, 69], ff: [42, 68], hb: [24, 34 + i], hf: [46, 33 - i], hdx: -1, eye: 'x', after: function (g, af) { sword(af[2], af[3], -70)(g); } };
+      case 'spat':
+        // Recibe el escupitajo, se limpia la cara y fulmina a la llama con la mirada
+        // (el último fotograma se mantiene mientras dura el aturdimiento).
+        var C = [
+          { bx: -2, lean: -3, hdx: -1, hf: [44, 36], lvl: 3 },
+          { bx: -1, lean: -2, hdx: 0, hf: [39, 31], lvl: 2 },
+          { bx: -1, lean: -1, hdx: 1, hf: [44, 31], lvl: 1 },
+          { bx: 0, lean: 0, hdx: 1, hf: [45, 51], lvl: 0 }
+        ][i];
+        var chx = 32 + C.bx + C.lean + C.hdx, chy = 27;
+        return {
+          bx: C.bx, lean: C.lean, hdx: C.hdx, fs: 2, fb: [31, 69], ff: [42, 69], hb: [30, 53], hf: C.hf,
+          eye: i < 3 ? 'x' : 'k', backItem: sword(30, 53, 100),
+          after: function (g) {
+            splatFace(g, chx + 6, chy + 4, C.lvl, 1.4);
+            if (i === 3) g.line(chx + 4, chy + 1, chx + 7, chy + 2, 'k', 1); // ceño fruncido
+          }
+        };
       case 'defeated':
         if (i === 0) return { bx: -1, lean: -2, by: 2, fb: [31, 69], ff: [42, 69], hb: [27, 50], hf: [44, 54], eye: 'x', fs: 2, after: function (g, af) { sword(af[2], af[3], 95)(g); } };
         return { by: 9, lean: 1, hdy: 2, hdx: 1, fb: [27, 69], ff: [44, 69], hb: [30, 60], hf: [47, 52], eye: 'x', fs: -2, item: sword(48, 52, 90) };
@@ -877,6 +930,7 @@
       shoot: A(4, 8, false, capBuild('shoot')),
       charge: A(4, 12, true, capBuild('charge')),
       hurt: A(2, 8, true, capBuild('hurt')),
+      spat: A(4, 8, false, capBuild('spat')),
       defeated: A(3, 3, false, capBuild('defeated'))
     }
   };
@@ -964,6 +1018,10 @@
         { by: -2, pitch: -0.05, fn: [45, 21], ff: [44, 23], rn: [5, 24], rf: [7, 26], open: true, tail: 2 }
       ][i];
       case 'stunned': return { bx: [-1, 0, 1, 0][i], hdy: 3, hdx: -1, eye: 'x', fn: [36, 30], ff: [32, 30], rn: [10, 30], rf: [15, 30], tail: -2, after: function (g) { stars(g, 40, 3, i, 6); } };
+      case 'spat':
+        // Sacude la cabeza para quitarse el escupitajo.
+        var sb = [-2, -1, 0, 0][i], sh = [-2, 1, -2, 0][i];
+        return { bx: sb, hdx: sh, hdy: 2, eye: 'x', open: i % 2 === 1, fn: [36, 30], ff: [32, 30], rn: [10, 30], rf: [15, 30], tail: -2, after: function (g) { splatFace(g, 34 + sb + sh + 5, 9, 3 - i); } };
       case 'hit': return { by: -2, pitch: -0.1, eye: 'x', open: true, fn: [39, 19 + i], ff: [36, 17], rn: [7, 19], rf: [12, 22 - i], tail: 2 };
     }
   }
@@ -996,6 +1054,7 @@
       run: A(6, 14, true, dogBuild('run')),
       lunge: A(3, 8, false, dogBuild('lunge')),
       stunned: A(4, 6, true, dogBuild('stunned')),
+      spat: A(4, 8, false, dogBuild('spat')),
       hit: A(2, 10, true, dogBuild('hit')),
       dead: A(1, 1, false, dogBuild('dead'))
     }
@@ -1052,9 +1111,19 @@
     // cabeza, orejas y pompones
     var hx = 27 + hdx, hy = 5 + by + hdy;
     var ear2 = p.ear ? -1 : 0;
-    g.line(hx + 1, hy, hx + 1 + ear2, hy - 4, 'w', 1); g.set(hx + 2 + ear2, hy - 4, 'w');
-    g.line(hx + 3, hy, hx + 4 + (i % 3 === 0 ? 1 : 0), hy - 4, 'W', 1); g.set(hx + 5, hy - 4, 'W');
+    if (p.earsDown) {
+      // orejas gachas (preocupación)
+      g.line(hx + 1, hy, hx - 3, hy - 2, 'w', 1);
+      g.line(hx + 3, hy, hx - 1, hy - 3, 'W', 1);
+    } else {
+      g.line(hx + 1, hy, hx + 1 + ear2, hy - 4, 'w', 1); g.set(hx + 2 + ear2, hy - 4, 'w');
+      g.line(hx + 3, hy, hx + 4 + (i % 3 === 0 ? 1 : 0), hy - 4, 'W', 1); g.set(hx + 5, hy - 4, 'W');
+    }
     g.blit(HEAD_LLAMA, hx, hy);
+    if (p.eyeWide) { g.rect(hx + 4, hy + 1, 2, 2, 'k'); g.set(hx + 4, hy + 1, 'x'); } // sorpresa
+    if (p.happy) { g.set(hx + 4, hy + 2, 'w'); g.set(hx + 3, hy + 2, 'k'); g.set(hx + 4, hy + 1, 'k'); g.set(hx + 5, hy + 2, 'k'); }
+    if (p.worry) { g.set(hx + 3, hy + 1, 'v'); g.set(hx + 4, hy, 'v'); g.set(hx + 1, hy + 3, 't'); g.set(hx + 1, hy + 4, 'T'); }
+    if (p.cheeks) { g.ellipse(hx + 7, hy + 5, 2, 1.6, 'w'); g.set(hx + 8, hy + 6, 'W'); g.set(hx + 7, hy + 7, 'W'); }
     g.rect(hx - 1, hy - 2, 2, 2, 'j'); g.set(hx - 1, hy, 'J'); g.set(hx - 2, hy + 1, 'j');
     g.rect(hx + 5, hy - 2, 2, 2, 't'); g.set(hx + 6, hy, 'o');
     if (p.chew) { g.set(hx + 7, hy + 6, 'W'); g.set(hx + 6, hy + 6, 'k'); }
@@ -1084,11 +1153,28 @@
           { by: -2, hdx: 2, hdy: 1, fn: [23, 48], rn: [9, 48], ff: [28, 44], rf: [14, 45] }
         ][i];
       case 'spit':
+        // Preparación, cachetes inflados, escupitajo, sacudida y orgullo (0,5 s).
         var base = { fn: [27, 50], ff: [24, 50], rn: [13, 50], rf: [10, 50] };
-        if (i === 0) return mix(base, { hdx: -2, hdy: -1, puff: true, ear: true });
-        if (i === 1) return mix(base, { hdx: 3, hdy: 1, open: true });
-        if (i === 2) return mix(base, { hdx: 2, hdy: 1, open: true, after: function (g, hx, hy) { g.ellipse(hx + 13, hy + 5, 2, 1.5, 'p'); g.set(hx + 12, hy + 6, 'P'); g.set(hx + 10, hy + 4, 'p'); g.set(hx + 16, hy + 3, 'p'); } });
-        return mix(base, { hdx: 1 });
+        if (i === 0) return mix(base, { hdx: -1, hdy: -2, ear: true });
+        if (i === 1) return mix(base, { hdx: -2, hdy: -1, cheeks: true, ear: true });
+        if (i === 2) return mix(base, { hdx: 3, hdy: 1, open: true, after: function (g, hx, hy) { g.ellipse(hx + 13, hy + 5, 2, 1.5, 'p'); g.set(hx + 12, hy + 6, 'P'); g.set(hx + 10, hy + 4, 'p'); g.set(hx + 16, hy + 3, 'p'); } });
+        if (i === 3) return mix(base, { hdx: 2, ear: true, after: function (g, hx, hy) { g.set(hx - 2, hy + 2, 'L'); g.set(hx - 3, hy + 4, 'L'); g.set(hx + 11, hy + 3, 'L'); } });
+        return mix(base, { hdx: -1, hdy: -3, happy: true });
+      case 'proud':
+        return { fn: [27, 50], ff: [24, 50], rn: [13, 50], rf: [10, 50], hdx: -1, hdy: -3 - (i % 2), happy: true, ear: i === 1, after: function (g, hx, hy) { if (i === 0) { g.set(hx + 11, hy - 1, 'g'); g.set(hx + 12, hy, 'G'); } } };
+      case 'surprise':
+        return { by: i === 0 ? -1 : 0, fn: [27, 50], ff: [24, 50], rn: [13, 50], rf: [10, 50], hdx: -3, hdy: -1, eyeWide: true };
+      case 'look':
+        return { fn: [27, 50], ff: [24, 50], rn: [13, 50], rf: [10, 50], hdx: [-2, -2, 1, 1][i], ear: i === 1 || i === 3, chew: i === 2 };
+      case 'worry':
+        return { fn: [27, 50], ff: [24, 50], rn: [13, 50], rf: [10, 50], hdx: -1, hdy: 2, earsDown: true, worry: true, chew: i === 1 };
+      case 'celebrate':
+        var hop = [0, -3, -4, -1][i], tuck = hop < -2 ? 2 : 0;
+        return {
+          by: hop, hdx: -1, hdy: -2, happy: true, ear: i % 2 === 1,
+          fn: [28, 50 + hop - tuck], ff: [25, 50 + hop], rn: [14, 50 + hop - tuck], rf: [11, 50 + hop],
+          after: function (g, hx, hy) { g.set(hx + 11, hy - 1 + (i % 2), 'g'); g.set(hx - 4, hy + 1 - (i % 2), 'g'); g.set(hx + 13, hy + 3, 'G'); }
+        };
     }
   }
   function llamaBuild(anim) { return function (i) { return llamaFrame(llamaPose(anim, i), i); }; }
@@ -1098,7 +1184,12 @@
       idle: A(8, 6, true, function (i) { var p = llamaPose('idle', Math.floor(i / 2)); p.ear = i === 3 || i === 6; return llamaFrame(p, i); }),
       walk: A(4, 6, true, llamaBuild('walk')),
       run: A(4, 10, true, llamaBuild('run')),
-      spit: A(4, 8, false, llamaBuild('spit'))
+      spit: A(5, 10, false, llamaBuild('spit')),
+      proud: A(2, 4, true, llamaBuild('proud')),
+      surprise: A(2, 8, true, llamaBuild('surprise')),
+      look: A(4, 3, true, llamaBuild('look')),
+      worry: A(2, 2, true, llamaBuild('worry')),
+      celebrate: A(4, 8, true, llamaBuild('celebrate'))
     }
   };
 
@@ -1162,14 +1253,31 @@
       }))
     }
   };
+  // Escupitajo: gota ovalada e irregular, verde claro con brillo amarillento, gotitas y estela.
   KINDS.spit = {
-    box: { w: 7, h: 6 }, anchor: 'center', scale: 2, fw: 12, fh: 8, ax: 6, ay: 4, def: 'fly',
+    box: { w: 12, h: 10 }, anchor: 'center', scale: 2, fw: 12, fh: 8, ax: 6, ay: 4, def: 'fly',
     anims: {
-      fly: A(2, 12, true, fx(12, 8, 6, 4, function (g, i) {
-        g.ellipse(7, 4, 2.6, 1.8 + i * 0.3, 'p');
-        g.set(8, 3, 'x'); g.set(6, 5, 'P'); g.set(5, 5, 'P');
-        g.set(3, 3 + i, 'p'); g.set(1, 4 - i, 'P');
+      fly: A(3, 14, true, fx(12, 8, 6, 4, function (g, i) {
+        g.ellipse(7.5, 4, 2.8 - (i === 1 ? 0.3 : 0), 1.8 + (i === 2 ? 0.4 : 0), 'p');
+        g.set(10, 3 + (i % 2), 'p'); g.set(8, 3, 'x'); g.set(9, 3, 'i');
+        g.set(6, 5, 'P'); g.set(5, 5, 'P');
+        g.set(3, 3 + (i % 2), 'p'); g.set(1, 4 - (i % 2), 'P'); g.set(2, 6 - (i % 3), 'p');
         g.outline('T');
+      }))
+    }
+  };
+  // Salpicadura del escupitajo (impacto): mancha verde que se abre en gotas.
+  KINDS.splat = {
+    box: { w: 22, h: 22 }, anchor: 'center', scale: 2, fw: 16, fh: 16, ax: 8, ay: 8, def: 'burst',
+    anims: {
+      burst: A(4, 14, false, fx(16, 16, 8, 8, function (g, i) {
+        var r = [2.6, 3.8, 4.2, 0][i];
+        if (r) { g.ellipse(8, 8, r, r * 0.75, 'P'); g.ellipse(7.5, 7.5, r * 0.6, r * 0.45, 'p'); g.set(7, 7, 'x'); }
+        for (var k = 0; k < 6; k++) {
+          var a = (k * 60 + i * 17) * DEG, d = 3 + i * 1.8;
+          g.set(8 + Math.cos(a) * d, 8 + Math.sin(a) * d * 0.8, k % 2 ? 'p' : 'P');
+        }
+        if (i < 2) g.outline('T');
       }))
     }
   };

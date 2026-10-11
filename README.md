@@ -8,13 +8,15 @@ Abre `index.html` directamente en tu navegador. No requiere instalación ni cone
 
 - A/D o flechas: caminar; Espacio, W o arriba: saltar.
 - J: huaraca; K: piedra incendiaria (5 por partida); L: boleadora.
+- H (o el botón «Llama» en móvil): la llama escupe al enemigo visible más cercano (hasta 240 px).
+  Tiene 3 escupitajos propios, recupera uno cada 6 s de juego, hace 1 de daño y aturde 0,5 s.
 - E cerca de una apacheta: llenar la manta (24 piedras). E junto a la llama: +8 piedras de sus
   alforjas (5 cargas, que se reponen en cada apacheta nueva).
 - P o Esc: pausa (menú con inventario). Enter / flechas en el título, la pausa y el mapa.
   Controles táctiles debajo del juego.
 - Derrota al capitán al final para ganar. Si pierdes tus seis corazones, puedes reiniciar.
 
-La llama sigue al protagonista y escupe automáticamente a los enemigos cercanos. Los enemigos tienen roles de aproximación, tiro y patrulla. No hay sangre. Activa el sonido con el botón superior.
+La llama sigue al protagonista y escupe cuando se lo ordenas; los enemigos escupidos se limpian la cara indignados y el capitán tiene su propia reacción. Si llegas al capitán sin haberla usado, la llama escupe una vez por su cuenta y te enseña la tecla (solo una vez por partida). Los enemigos tienen roles de aproximación, tiro y patrulla. No hay sangre. Activa el sonido con el botón superior.
 
 ## Despliegue
 

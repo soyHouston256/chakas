@@ -55,6 +55,27 @@ const RESPAWN_AMMO = 12,
 const LLAMA_LOADS = 5,
   LLAMA_REFILL = 8,
   LLAMA_RANGE = 120;
+// Escupitajo de la llama (H o botón táctil): reserva propia, independiente de las alforjas.
+// Recupera una carga cada SPIT.recharge segundos de juego (en pausa no avanza) y apunta al
+// enemigo visible más cercano dentro de SPIT.range. Sin objetivo no gasta la carga.
+const SPIT = {
+  max: 3,
+  recharge: 6,
+  damage: 1,
+  stun: 0.5,
+  bossStun: 0.5, // sujeto a balance: bajar a 0,3 si el jefe resulta demasiado fácil
+  bossFirstStun: 0.8, // primer impacto: se limpia la cara y mira a la llama
+  range: 240,
+  gap: 0.4, // pausa mínima entre escupitajos (deja terminar la animación)
+  lead: 0.2, // de la orden al «¡ptuá!»: prepara la cabeza e infla los cachetes
+  speed: 460,
+  gravity: 260,
+  splat: 1.1, // segundos que la mancha sigue en la cara (sin sprites)
+  huff: 0.8, // indignación visible tras el aturdimiento
+};
+// Obstáculos sólidos que el escupitajo no atraviesa ({x, y, w, h}). En Sacsayhuamán no hay
+// muros: las terrazas solo se pisan por arriba y todos los proyectiles pasan por delante.
+const SOLIDS = [];
 // La última apacheta está en la entrada de la arena del capitán: punto de reaparición
 // y recarga justo antes del jefe (ARENA_PILE).
 const piles = [180, 850, 1600, 2450, 3200, 3500];
@@ -67,19 +88,142 @@ const platforms = [
   { x: 2100, y: 345, w: 180 },
   { x: 2820, y: 330, w: 220 },
 ];
-function tone(freq = 350) {
-  if (!sound) return;
+// Contexto de audio solo con el sonido activado (todos los efectos pasan por aquí).
+function audioCtx() {
+  if (!sound) return null;
   try {
     audio ??= new (window.AudioContext || window.webkitAudioContext)();
-    const o = audio.createOscillator(),
-      g = audio.createGain();
+    return audio;
+  } catch {
+    return null;
+  }
+}
+function tone(freq = 350) {
+  const a = audioCtx();
+  if (!a) return;
+  try {
+    const o = a.createOscillator(),
+      g = a.createGain();
     o.connect(g);
-    g.connect(audio.destination);
+    g.connect(a.destination);
     o.frequency.value = freq;
-    g.gain.setValueAtTime(0.04, audio.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.12);
+    g.gain.setValueAtTime(0.04, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.12);
     o.start();
-    o.stop(audio.currentTime + 0.12);
+    o.stop(a.currentTime + 0.12);
+  } catch {}
+}
+// Efectos sintetizados de la llama (Web Audio, sin archivos): «¡ptuá!», «¡plaf!», recarga y
+// la queja del capitán. Respetan el botón de sonido como tone().
+let noiseBuf = null;
+function noiseSrc(a) {
+  if (!noiseBuf) {
+    const n = Math.floor(a.sampleRate * 0.5);
+    noiseBuf = a.createBuffer(1, n, a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const s = a.createBufferSource();
+  s.buffer = noiseBuf;
+  return s;
+}
+function env(g, t, peak, attack, end) {
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + end);
+}
+function sfx(name) {
+  const a = audioCtx();
+  if (!a) return;
+  try {
+    const t = a.currentTime,
+      out = a.destination;
+    if (name === "spit") {
+      // «Pt»: chasquido agudo que cae rápido…
+      const o = a.createOscillator(),
+        g = a.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(1100, t);
+      o.frequency.exponentialRampToValueAtTime(320, t + 0.07);
+      env(g, t, 0.05, 0.004, 0.09);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.1);
+      // …y «uá» húmedo: ruido filtrado que burbujea (modulado a ~30 Hz).
+      const n = noiseSrc(a),
+        f = a.createBiquadFilter(),
+        g2 = a.createGain(),
+        wob = a.createGain(),
+        lfo = a.createOscillator(),
+        depth = a.createGain();
+      f.type = "bandpass";
+      f.Q.value = 2.5;
+      f.frequency.setValueAtTime(2000, t + 0.03);
+      f.frequency.exponentialRampToValueAtTime(650, t + 0.3);
+      env(g2, t + 0.03, 0.09, 0.015, 0.3);
+      lfo.type = "square";
+      lfo.frequency.value = 31;
+      depth.gain.value = 0.45;
+      wob.gain.value = 0.55;
+      lfo.connect(depth).connect(wob.gain);
+      n.connect(f).connect(g2).connect(wob).connect(out);
+      n.start(t + 0.03);
+      n.stop(t + 0.33);
+      lfo.start(t);
+      lfo.stop(t + 0.33);
+    } else if (name === "splat") {
+      // «¡Plaf!»: más grave y húmedo que el golpe seco de una piedra.
+      const n = noiseSrc(a),
+        f = a.createBiquadFilter(),
+        g = a.createGain(),
+        o = a.createOscillator(),
+        g2 = a.createGain();
+      f.type = "lowpass";
+      f.frequency.setValueAtTime(1200, t);
+      f.frequency.exponentialRampToValueAtTime(180, t + 0.2);
+      env(g, t, 0.12, 0.006, 0.21);
+      n.connect(f).connect(g).connect(out);
+      n.start(t);
+      n.stop(t + 0.22);
+      o.frequency.setValueAtTime(240, t);
+      o.frequency.exponentialRampToValueAtTime(70, t + 0.18);
+      env(g2, t, 0.07, 0.005, 0.19);
+      o.connect(g2).connect(out);
+      o.start(t);
+      o.stop(t + 0.2);
+    } else if (name === "recharge") {
+      // Discreto: se oye cada 6 s en combate.
+      const o = a.createOscillator(),
+        g = a.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(660, t);
+      o.frequency.exponentialRampToValueAtTime(990, t + 0.08);
+      env(g, t, 0.018, 0.01, 0.11);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.12);
+    } else if (name === "grumble") {
+      // Queja caricaturesca del capitán («¡Mal-di-ta lla-ma!»): voz de sierra con un formante.
+      const o = a.createOscillator(),
+        f = a.createBiquadFilter(),
+        g = a.createGain();
+      o.type = "sawtooth";
+      f.type = "bandpass";
+      f.frequency.value = 850;
+      f.Q.value = 3;
+      g.gain.setValueAtTime(0.0001, t);
+      [200, 235, 185, 260, 165].forEach((hz, i) => {
+        const s = t + i * 0.12;
+        o.frequency.setValueAtTime(hz, s);
+        o.frequency.linearRampToValueAtTime(hz * (i === 3 ? 1.25 : 0.9), s + 0.1);
+        g.gain.setValueAtTime(0.0001, s);
+        g.gain.exponentialRampToValueAtTime(0.06, s + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, s + 0.11);
+      });
+      o.connect(f).connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.62);
+    }
   } catch {}
 }
 function reset() {
@@ -112,16 +256,27 @@ function reset() {
   world = {
     time: 0,
     llama: 20,
-    spit: 0,
     checkpoint: 70,
     cpPile: -1,
     deaths: 0,
     loads: LLAMA_LOADS,
     eHeld: false,
     arenaReloads: ARENA_RELOADS,
+    kills: 0,
+    // Escupitajo: cargas, progreso de la siguiente (s), pausa entre escupitajos, orden en
+    // curso, si el jugador lo usó en esta vida y si ya hubo rescate automático en la partida.
+    spitCharges: SPIT.max,
+    spitRecharge: 0,
+    spitCool: 0,
+    spitHeld: false,
+    spitPending: null,
+    spitUsed: false,
+    spitRescueUsed: false,
+    tip: null, // aviso contextual { text, t }
+    speech: [], // globos de diálogo { e, text, t }
   };
   fx = [];
-  llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9 };
+  llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9, react: "", reactT: 0, still: 0 };
   enemies = [];
   [620, 980, 1360, 1750, 2150, 2600, 2940, 3300].forEach((x, i) => {
     const dog = i % 3 === 0; // type 0 = perro (alano): hitbox bajo y ancho
@@ -194,6 +349,8 @@ function respawn() {
     e.aggro = false;
     e.alert = 0;
     e.hitDone = false;
+    e.spat = 0;
+    e.huff = 0;
     // En la apacheta de la arena, el capitán recupera el aliento: hasta el 60 % de su vida
     // (si tenía más, la conserva). En las demás apachetas conserva el daño recibido.
     if (e.type === 3 && world.cpPile === ARENA_PILE)
@@ -203,8 +360,20 @@ function respawn() {
   shots = [];
   particles = [];
   world.llama = player.x - 80;
-  world.spit = 1;
+  // La llama reaparece con todos sus escupitajos. El rescate automático no se repite.
+  Object.assign(world, {
+    spitCharges: SPIT.max,
+    spitRecharge: 0,
+    spitCool: 0,
+    spitPending: null,
+    spitUsed: false,
+    tip: null,
+    speech: [],
+  });
   llamaS.prev = world.llama;
+  llamaS.react = "";
+  llamaS.reactT = 0;
+  restartAnim(llamaS, "idle");
   cam = Math.max(0, Math.min(END - W, player.x - 280));
   state = "playing";
   overlay.style.display = "none";
@@ -233,6 +402,9 @@ function animFields() {
     hitDone: false, // piquero: la estocada en curso ya hirió
     aggro: false, // perro: ya vio al héroe
     alert: 0, // perro: segundos de alerta restantes antes de correr
+    spat: 0, // escupitajo en la cara (s restantes de la mancha)
+    huff: 0, // indignación tras el escupitajo
+    spatOnce: false, // capitán: ya hizo su reacción especial
   };
 }
 // Cambia de animación solo si es distinta (reinicia el temporizador de la acción).
@@ -427,6 +599,8 @@ function hit(srcX, push = 260) {
   restartAnim(player, player.hp <= 0 ? "dead" : "hurt");
   burst(player.x, player.y, "#e9b25f");
   tone(130);
+  // La llama gira la cabeza hacia el guerrero, sorprendida.
+  llamaReact("surprise", 0.6, pc >= world.llama + 18 ? 1 : -1);
   return true;
 }
 function resolveDeath() {
@@ -443,6 +617,10 @@ function resolveDeath() {
 function win() {
   state = "won";
   holdKeys();
+  if (world && player) {
+    world.tip = null;
+    llamaReact("celebrate", 999, player.x + player.w / 2 >= world.llama + 18 ? 1 : -1);
+  }
   const withMap = mapReady();
   if (withMap) saveProgress(Math.max(mapS.progress, 1));
   show(
@@ -506,10 +684,10 @@ function throwBola() {
   });
   tone(380);
 }
-function damageEnemy(e, dmg, vx, fxX, fxY) {
+function damageEnemy(e, dmg, vx, fxX, fxY, spark = "hit_spark") {
   e.hp -= dmg;
   e.flash = 0.1;
-  spawnFx("hit_spark", "burst", fxX, fxY);
+  spawnFx(spark, "burst", fxX, fxY);
   if (e.hp <= 0) {
     e.dead = true;
     e.wind = 0;
@@ -518,6 +696,8 @@ function damageEnemy(e, dmg, vx, fxX, fxY) {
     burst(e.x, e.y, "#d6c5a3", 22);
     tone(700);
     if (e.type === 3) win();
+    // De vez en cuando (una de cada dos victorias) la llama levanta la cabeza, orgullosa.
+    else if (world.kills++ % 2 === 0) llamaReact("proud", 0.9);
   }
 }
 function shoot(fire) {
@@ -551,8 +731,10 @@ function hitsEnemy(s, e) {
 }
 // Enemigo visible en la ventana de cámara (con margen interior) y a distancia de tiro.
 function canFire(e) {
-  const visible = e.x + e.w > cam + FIRE_MARGIN && e.x < cam + W - FIRE_MARGIN;
-  return visible && Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < FIRE_RANGE;
+  return onScreen(e) && Math.abs(e.x + e.w / 2 - (player.x + player.w / 2)) < FIRE_RANGE;
+}
+function onScreen(e) {
+  return e.x + e.w > cam + FIRE_MARGIN && e.x < cam + W - FIRE_MARGIN;
 }
 function arenaLive() {
   return enemies.some((e) => e.type === 3 && !e.dead);
@@ -571,6 +753,199 @@ function llamaReload() {
   tone(600);
   spawnFx("dust", "puff", world.llama + 18, GROUND - 40);
   return true;
+}
+// ---------------------------------------------------------------------------
+// Escupitajo de la llama. Pulsar H (o el botón táctil) ordena un escupitajo; mantenerla no
+// repite. La carga se gasta al dar la orden (con objetivo válido) y el proyectil sale
+// SPIT.lead s después, cuando la llama termina de inflar los cachetes.
+function rechargeLlamaSpit(dt) {
+  if (world.spitCharges >= SPIT.max) {
+    world.spitRecharge = 0;
+    return;
+  }
+  world.spitRecharge += dt;
+  if (world.spitRecharge >= SPIT.recharge) {
+    world.spitCharges++;
+    world.spitRecharge = world.spitCharges < SPIT.max ? world.spitRecharge - SPIT.recharge : 0;
+    sfx("recharge");
+  }
+}
+function canLlamaSpit() {
+  return (
+    state === "playing" &&
+    player.hp > 0 &&
+    world.spitCharges > 0 &&
+    world.spitCool <= 0 &&
+    !world.spitPending
+  );
+}
+const LLAMA_MID = 18; // centro de la llama respecto a world.llama
+// Boca de la llama mirando en el sentido dir (la cabeza va delante y arriba).
+function llamaMouth(dir) {
+  return { x: world.llama + LLAMA_MID + dir * 30, y: GROUND - 84 };
+}
+// ¿Hay un obstáculo sólido entre x0 y x1 a la altura del escupitajo?
+function spitBlocked(x0, x1) {
+  const a = Math.min(x0, x1),
+    b = Math.max(x0, x1);
+  return SOLIDS.some((s) => s.x < b && s.x + s.w > a && s.y < GROUND - 30 && s.y + s.h > GROUND - 90);
+}
+// Altura de la cara de cada enemigo (adonde apunta el escupitajo).
+function faceY(e) {
+  return e.type === 3 ? e.y + 22 : e.type === 0 ? e.y + 6 : e.y + 10;
+}
+function faceX(e) {
+  const f = e.face >= 0 ? 1 : -1;
+  return e.x + e.w / 2 + f * (e.type === 3 ? 10 : e.type === 0 ? e.w / 2 - 6 : 4);
+}
+// Enemigo vivo y visible más cercano a la llama (distancia al borde), sin obstáculos.
+function findLlamaTarget() {
+  const lx = world.llama + LLAMA_MID;
+  let best = null,
+    bestD = Infinity;
+  for (const e of enemies) {
+    if (e.dead || !onScreen(e)) continue;
+    const d = Math.max(0, e.x - lx, lx - (e.x + e.w));
+    if (d > SPIT.range || d >= bestD) continue;
+    const dir = e.x + e.w / 2 >= lx ? 1 : -1;
+    if (spitBlocked(llamaMouth(dir).x, e.x + e.w / 2)) continue;
+    best = e;
+    bestD = d;
+  }
+  return best;
+}
+// Da la orden de escupir. auto = rescate automático (no cuenta como uso del jugador).
+function activateLlamaSpit(auto = false) {
+  if (!canLlamaSpit()) return false;
+  const target = findLlamaTarget();
+  if (!target) return false; // sin objetivo no se gasta la carga
+  const dir = target.x + target.w / 2 >= world.llama + LLAMA_MID ? 1 : -1;
+  world.spitCharges--;
+  world.spitCool = SPIT.gap;
+  world.spitPending = { t: SPIT.lead, target, dir };
+  if (!auto) world.spitUsed = true;
+  llamaS.face = dir; // gira hacia el objetivo…
+  llamaS.react = "";
+  llamaS.reactT = 0;
+  restartAnim(llamaS, "spit"); // …levanta la cabeza e infla los cachetes
+  llamaS.spitT = 0;
+  return true;
+}
+// Sale el escupitajo: arco corto desde la boca hasta la cara del objetivo.
+function releaseLlamaSpit(p) {
+  const m = llamaMouth(p.dir),
+    e = p.target,
+    alive = e && !e.dead;
+  const tx = alive ? e.x + e.w / 2 : m.x + p.dir * SPIT.range,
+    ty = alive ? faceY(e) : m.y + 30;
+  const t = Math.max(0.12, Math.abs(tx - m.x) / SPIT.speed);
+  shots.push({
+    x: m.x - 6,
+    y: m.y - 5,
+    w: 12,
+    h: 10,
+    vx: p.dir * SPIT.speed,
+    vy: (ty - m.y - 0.5 * SPIT.gravity * t * t) / t,
+    life: t + 0.3,
+    good: true,
+    damage: SPIT.damage,
+    spit: true,
+  });
+  sfx("spit");
+  for (let i = 0; i < 4; i++)
+    particles.push({
+      x: m.x,
+      y: m.y,
+      vx: p.dir * (60 + Math.random() * 90),
+      vy: -40 - Math.random() * 80,
+      t: 0.3,
+      color: i % 2 ? "#c3eaa8" : "#79b46b",
+    });
+}
+function updateLlamaSpit(dt) {
+  world.spitCool -= dt;
+  rechargeLlamaSpit(dt);
+  const pressed = keys.has("KeyH") && !world.spitHeld;
+  world.spitHeld = keys.has("KeyH");
+  if (pressed && !activateLlamaSpit() && world.spitCharges > 0 && !world.spitPending)
+    llamaReact("look", 0.6); // sin nadie a quien escupir: mira alrededor (no gasta carga)
+  tryAutomaticLlamaRescue();
+  const p = world.spitPending;
+  if (p && (p.t -= dt) <= 0) {
+    world.spitPending = null;
+    releaseLlamaSpit(p);
+  }
+}
+// Salpicadura verde (partículas + efecto de arte) y «¡plaf!».
+function splash(x, y, n = 10) {
+  for (let i = 0; i < n; i++)
+    particles.push({
+      x,
+      y,
+      vx: (Math.random() - 0.5) * 220,
+      vy: -Math.random() * 200,
+      t: 0.45,
+      color: i % 3 ? "#c3eaa8" : "#79b46b",
+    });
+  sfx("splat");
+}
+// Impacto en un enemigo: 1 de daño, aturdimiento corto (sin acumularse), retroceso,
+// mancha en la cara y reacción cómica. El capitán reacciona a lo grande la primera vez.
+function applySpitImpact(e, s) {
+  const dir = s.vx >= 0 ? 1 : -1;
+  e.face = -dir; // mira hacia la llama
+  const x = faceX(e),
+    y = faceY(e);
+  splash(x, y);
+  const boss = e.type === 3,
+    first = boss && !e.spatOnce;
+  damageEnemy(e, SPIT.damage, s.vx, x, y, "splat");
+  if (e.dead || state !== "playing") return;
+  e.stun = Math.max(e.stun, boss ? (first ? SPIT.bossFirstStun : SPIT.bossStun) : SPIT.stun);
+  e.wind = 0;
+  e.lunge = 0;
+  e.spat = SPIT.splat;
+  e.huff = e.stun + SPIT.huff;
+  e.x += dir * (boss ? 6 : 10); // retrocede un poco
+  restartAnim(e, "spat");
+  if (first) {
+    e.spatOnce = true;
+    say(e, "¡Maldita llama!", 1.8);
+    sfx("grumble");
+    llamaReact("proud", 1.4); // la llama levanta la cabeza, orgullosa
+  } else if (e.type === 1 || e.type === 2) say(e, "¡Puaj!", 0.8);
+}
+function say(e, text, t) {
+  world.speech = world.speech.filter((b) => b.e !== e);
+  world.speech.push({ e, text, t });
+}
+// Rescate automático: si el jugador llega al capitán sin haber escupido en esta vida, la
+// llama escupe una vez sola y enseña la habilidad. Solo una vez por partida.
+const COARSE =
+  typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)") : null;
+function rescueTip() {
+  return COARSE && COARSE.matches
+    ? "¡Tu llama también sabe defenderse! Toca el botón LLAMA para ayudarla"
+    : "¡Tu llama también sabe defenderse! Pulsa H para ayudarla";
+}
+function tryAutomaticLlamaRescue() {
+  if (world.spitRescueUsed || world.spitUsed || !canLlamaSpit()) return false;
+  if (player.x < piles[ARENA_PILE]) return false; // aún no llegó al enfrentamiento final
+  const boss = enemies.find((e) => e.type === 3 && !e.dead);
+  if (!boss || findLlamaTarget() !== boss || !activateLlamaSpit(true)) return false;
+  world.spitRescueUsed = true;
+  world.tip = { text: rescueTip(), t: 4.5 };
+  return true;
+}
+// Gestos de la llama (sorpresa, orgullo, celebración…): secundarios, nunca cortan un escupitajo.
+function llamaReact(anim, dur, face) {
+  if (!world || !llamaS) return;
+  const spitting = llamaS.anim === "spit" && llamaS.spitT < animDur("llama", "spit", 0.5);
+  llamaS.react = anim;
+  llamaS.reactT = dur;
+  if (spitting) return;
+  if (face) llamaS.face = face;
+  restartAnim(llamaS, anim);
 }
 function update(dt) {
   world.time += dt;
@@ -643,11 +1018,16 @@ function update(dt) {
     player.bola = Math.max(player.bola, MAX_BOLA);
   } else if (ePressed) llamaReload();
   world.llama += (player.x - 80 - world.llama) * dt * 3;
-  world.spit -= dt;
+  if (player.hp > 0) updateLlamaSpit(dt);
+  if (world.tip && (world.tip.t -= dt) <= 0) world.tip = null;
+  for (const b of world.speech) b.t -= dt;
+  world.speech = world.speech.filter((b) => b.t > 0 && !b.e.dead);
   for (const e of enemies) {
     if (e.dead) continue;
     // Los estados temporales corren aunque el enemigo esté fuera de la ventana de activación.
     e.stun -= dt;
+    e.spat -= dt;
+    e.huff -= dt;
     if (Math.abs(e.x - player.x) > 850) {
       e.wind = 0; // un ataque pendiente no se dispara al volver
       e.lunge = 0;
@@ -659,10 +1039,10 @@ function update(dt) {
     e.flash -= dt;
     const touching = overlap(player, e);
     if (e.stun > 0) {
-      // Aturdido por la boleadora: ni se mueve ni ataca (sí hace daño al tocarlo).
+      // Aturdido (boleadora o escupitajo): ni se mueve ni ataca (sí hace daño al tocarlo).
       e.wind = 0;
       e.lunge = 0;
-      setAnim(e, e.type === 3 ? "hurt" : "stunned");
+      if (e.anim !== "spat") setAnim(e, e.type === 3 ? "hurt" : "stunned");
     } else if (e.type === 0) updateDog(e, dir, dt, touching);
     else if (e.type === 2) updatePiquero(e, dir, dt, touching);
     else {
@@ -684,24 +1064,6 @@ function update(dt) {
       e.lunge = 0;
       e.wind = 0;
     }
-    if (Math.abs(e.x - world.llama) < 240 && world.spit <= 0) {
-      // La llama escupe hacia el enemigo, no hacia donde mira el héroe.
-      const sdir = e.x + e.w / 2 >= world.llama + 12 ? 1 : -1;
-      shots.push({
-        x: world.llama + 12,
-        y: GROUND - 48,
-        vx: sdir * 400,
-        vy: 0,
-        life: 0.65,
-        good: true,
-        damage: 1,
-        spit: true,
-      });
-      world.spit = 2.8;
-      restartAnim(llamaS, "spit");
-      llamaS.spitT = 0;
-      llamaS.face = sdir;
-    }
   }
   for (const s of shots) {
     s.x += s.vx * dt;
@@ -711,12 +1073,25 @@ function update(dt) {
       s.vy += 700 * dt;
       if (s.y > GROUND - 6) s.life = 0;
     }
+    if (s.spit) {
+      s.vy += SPIT.gravity * dt;
+      // Contra el suelo o un obstáculo sólido: se aplasta ahí (no lo atraviesa).
+      if (s.y + s.h > GROUND || SOLIDS.some((o) => overlap(s, o))) {
+        s.life = 0;
+        splash(s.x + s.w / 2, Math.min(s.y + s.h / 2, GROUND - 4), 6);
+        continue;
+      }
+    }
     s.life -= dt;
     if (s.life <= 0) continue;
     if (s.good) {
       for (const e of enemies)
         if (!e.dead && hitsEnemy(s, e)) {
           s.life = 0;
+          if (s.spit) {
+            applySpitImpact(e, s);
+            break;
+          }
           burst(s.x, s.y, s.fire ? "#f09e47" : "#eddb9c", 5);
           if (s.bola) {
             e.stun = e.type === 3 ? 0.7 : 2;
@@ -967,9 +1342,23 @@ function updateLlama(dt) {
   llamaS.prev = world.llama;
   llamaS.animT += dt;
   llamaS.spitT += dt;
+  llamaS.reactT -= dt;
   if (llamaS.anim === "spit" && llamaS.spitT < animDur("llama", "spit", 0.5)) return;
-  if (Math.abs(v) > 5) llamaS.face = v > 0 ? 1 : -1;
-  setAnim(llamaS, Math.abs(v) > 150 ? "run" : Math.abs(v) > 12 ? "walk" : "idle");
+  // Gestos breves (sorpresa, orgullo…); caminar para seguir al guerrero los interrumpe.
+  const speed = Math.abs(v);
+  if (llamaS.react && llamaS.reactT > 0 && speed <= 150) return setAnim(llamaS, llamaS.react);
+  llamaS.react = "";
+  if (speed > 5) llamaS.face = v > 0 ? 1 : -1;
+  if (speed > 12) {
+    llamaS.still = 0;
+    return setAnim(llamaS, speed > 150 ? "run" : "walk");
+  }
+  // Quieta: preocupada si al guerrero le queda poca vida; si no, de vez en cuando mira
+  // alrededor y mueve las orejas (4 s quieta → 2,5 s mirando).
+  llamaS.still += dt;
+  if (llamaS.still > 6.5) llamaS.still = 0;
+  if (player.hp > 0 && player.hp <= 2) setAnim(llamaS, "worry");
+  else setAnim(llamaS, llamaS.still > 4 ? "look" : "idle");
 }
 function rect(x, y, w, h, c) {
   ctx.fillStyle = c;
@@ -1178,15 +1567,94 @@ function drawLlama() {
   if (SP) {
     resetSpr();
     sprite("llama", llamaS.anim, llamaS.animT, lx - 2, GROUND - 70, 40, 70, llamaS.face);
-    return;
+  } else {
+    // Sin sprites: llama geométrica (mirando a la derecha, espejada si mira a la izquierda).
+    // La cabeza avanza al escupir y se levanta con orgullo.
+    const f = llamaS.face < 0 ? -1 : 1,
+      c = lx + LLAMA_MID,
+      a = llamaS.anim,
+      hx = a === "spit" ? (llamaS.spitT < 0.2 ? -3 : 5) : a === "surprise" ? -5 : 0,
+      hy = a === "proud" || a === "celebrate" ? -5 : a === "worry" ? 4 : 0;
+    const R = (x, y, w, h, col) => rect(f > 0 ? c + x : c - x - w, y, w, h, col);
+    R(-28, GROUND - 39, 42, 20, "#e6d6ad");
+    R(5 + hx / 2, GROUND - 62 + hy / 2, 11, 37, "#e6d6ad");
+    R(5 + hx, GROUND - 67 + hy, 22, 12, "#e6d6ad");
+    R(7 + hx, GROUND - 77 + hy, 4, 12, "#e6d6ad");
+    R(-23, GROUND - 20, 6, 20, "#cab98f");
+    R(5, GROUND - 20, 6, 20, "#cab98f");
+    R(-18, GROUND - 40, 22, 16, "#a04d39");
   }
-  rect(lx - 10, GROUND - 39, 42, 20, "#e6d6ad");
-  rect(lx + 23, GROUND - 62, 11, 37, "#e6d6ad");
-  rect(lx + 23, GROUND - 67, 22, 12, "#e6d6ad");
-  rect(lx + 25, GROUND - 77, 4, 12, "#e6d6ad");
-  rect(lx - 5, GROUND - 20, 6, 20, "#cab98f");
-  rect(lx + 23, GROUND - 20, 6, 20, "#cab98f");
-  rect(lx, GROUND - 40, 22, 16, "#a04d39");
+  if (llamaS.anim === "surprise") {
+    // «!» sobre la cabeza.
+    const x = Math.round(lx + LLAMA_MID + llamaS.face * 6),
+      y = GROUND - 122;
+    rect(x - 3, y - 2, 8, 24, "#0B080D");
+    rect(x - 1, y, 4, 12, "#F2C14E");
+    rect(x - 1, y + 15, 4, 4, "#F2C14E");
+  }
+}
+// Mancha en la cara (sin sprites; con ellos la dibuja la animación «spat»), indignación
+// tras el aturdimiento y globos de diálogo.
+function drawSpitReactions() {
+  for (const e of enemies) {
+    if (e.dead || e.gone) continue;
+    if (!SP && e.spat > 0) {
+      ctx.globalAlpha = Math.min(1, e.spat / 0.4);
+      const x = faceX(e),
+        y = faceY(e);
+      rect(x - 6, y - 4, 12, 8, "#c3eaa8");
+      rect(x - 3, y - 6, 6, 2, "#c3eaa8");
+      rect(x - 4, y + 4, 3, 5, "#79b46b");
+      ctx.globalAlpha = 1;
+    }
+    if (e.huff > 0 && !(e.stun > 0)) drawHuff(e);
+  }
+  for (const b of world.speech) drawSpeech(b);
+}
+// Marca de enfado (cuatro ángulos rojos) junto a la cabeza.
+function drawHuff(e) {
+  const pulse = reducedMotion() ? 0 : Math.round(Math.sin(world.time * 18));
+  const x = Math.round(faceX(e) + (e.face >= 0 ? 10 : -22)),
+    y = Math.round(e.y - (e.type === 3 ? 10 : e.type === 0 ? 14 : 34)) - pulse;
+  for (const [dx, dy, w, h] of [
+    [0, 0, 4, 2],
+    [0, 0, 2, 4],
+    [8, 0, 4, 2],
+    [10, 0, 2, 4],
+    [0, 10, 4, 2],
+    [0, 8, 2, 4],
+    [8, 10, 4, 2],
+    [10, 8, 2, 4],
+  ])
+    rect(x + dx, y + dy, w, h, "#D8432F");
+}
+// Globo de diálogo sobre el personaje (pico hacia abajo), legible en pantallas pequeñas.
+function drawSpeech(b) {
+  const e = b.e,
+    cx = Math.max(cam + 90, Math.min(cam + W - 90, e.x + e.w / 2)),
+    y = e.y - (e.type === 3 ? 118 : e.type === 0 ? 52 : 78);
+  ctx.save();
+  if (promptScale !== 1) {
+    ctx.translate(cx, y + 32);
+    ctx.scale(promptScale, promptScale);
+    ctx.translate(-cx, -(y + 32));
+  }
+  ctx.globalAlpha = Math.min(1, b.t * 4);
+  ctx.font = "bold " + PROMPT_FONT;
+  const w = Math.round(ctx.measureText(b.text).width + 24),
+    x = Math.round(cx - w / 2);
+  rect(x - 2, y - 2, w + 4, 34, "#E9B53B");
+  rect(x, y, w, 30, "#F2E6CC");
+  rect(cx - 5, y + 32, 10, 3, "#E9B53B");
+  rect(cx - 3, y + 35, 6, 3, "#E9B53B");
+  rect(cx - 3, y + 30, 6, 4, "#F2E6CC");
+  ctx.fillStyle = "#16121A";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.fillText(b.text, cx, y + 15.5);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
 }
 // dead=true: solo los derrotados que salen volando (se dibujan antes del suelo para que
 // se pierdan detrás del terreno al caer); dead=false: vivos y el capitán derrotado.
@@ -1304,13 +1772,15 @@ function drawShots() {
               ? "fire_stone"
               : "stone"
             : "bullet";
-      sprite(kind, s.bola ? "spin" : "fly", world.time, s.x, s.y, 8, 8, s.vx < 0 ? -1 : 1);
+      const sw = s.spit ? s.w || 8 : 8,
+        sh = s.spit ? s.h || 8 : 8;
+      sprite(kind, s.bola ? "spin" : "fly", world.time, s.x, s.y, sw, sh, s.vx < 0 ? -1 : 1);
     } else
       rect(
         s.x,
         s.y,
-        s.fire || s.bola ? 13 : 7,
-        s.fire || s.bola ? 10 : 6,
+        s.fire || s.bola || s.spit ? 13 : 7,
+        s.fire || s.bola || s.spit ? 10 : 6,
         s.good
           ? s.bola
             ? "#c9a46a"
@@ -1352,11 +1822,13 @@ function draw() {
     drawShots();
     drawFx();
     for (const p of particles) rect(p.x, p.y, 4, 4, p.color);
+    drawSpitReactions();
     drawPrompts();
   }
   ctx.restore();
   if (BG && BG.drawForeground) BG.drawForeground(ctx, camR, renderT, BG_OPTS);
   if (UI) return drawCanvasNotices(); // el HUD vive en HTML (ui.js); aquí solo avisos
+  drawTip(140);
   rect(18, 18, HUD_W, 58, "#102b30e8");
   ctx.font = "bold 16px sans-serif";
   ctx.fillStyle = "#f3d394";
@@ -1385,6 +1857,15 @@ function drawCanvasNotices() {
     drawNotice("Manta vacía: J golpea con la macana · E recarga en la apacheta o la llama", 24);
   else if (player.x > 3400 && enemies.some((e) => e.type === 3 && !e.dead))
     drawNotice("CAPITÁN DE LA EXPEDICIÓN", 24, "#E9B53B");
+  drawTip(64);
+}
+// Aviso del rescate automático (enseña la tecla H / el botón de la llama).
+function drawTip(y) {
+  if (!player || state !== "playing" || !world.tip) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, world.tip.t * 2);
+  drawNotice(world.tip.text, y, "#c3eaa8");
+  ctx.restore();
 }
 const HUD_W = 470;
 // Corazones con tope: nunca desbordan el panel (con más vida se muestra «♥×N»).
@@ -1403,7 +1884,10 @@ function hudLine() {
     "   FUEGO " +
     player.fire +
     "   BOLAS " +
-    player.bola
+    player.bola +
+    "   LLAMA " +
+    "●".repeat(world.spitCharges) +
+    "○".repeat(SPIT.max - world.spitCharges)
   );
 }
 // ---------------------------------------------------------------------------
@@ -1626,7 +2110,17 @@ function clampN(v, lo, hi) {
 function hudView(p, w, sc) {
   const hp = p ? Math.floor(clampN(p.hp, 0, MAX_HP)) : MAX_HP;
   const loads = w && w.loads != null ? Math.floor(clampN(w.loads, 0, LLAMA_LOADS)) : LLAMA_LOADS;
+  const spit = w && w.spitCharges != null ? Math.floor(clampN(w.spitCharges, 0, SPIT.max)) : SPIT.max;
+  // Progreso de la carga que se está recuperando (0..1, en pasos de 5 % para no tocar el DOM
+  // en cada frame).
+  const spitFill = spit < SPIT.max ? Math.floor(clampN(w.spitRecharge / SPIT.recharge, 0, 1) * 20) / 20 : 0;
   return {
+    spit,
+    spitMax: SPIT.max,
+    spitFill,
+    spitLabel:
+      "Escupitajos de la llama: " + spit + " de " + SPIT.max + (spit < SPIT.max ? ", recuperando" : ""),
+    spitHint: !!(w && w.tip),
     hp,
     maxHp: MAX_HP,
     lifeLabel: "Vida: " + hp + " de " + MAX_HP,
@@ -1774,7 +2268,10 @@ function loop(t) {
   } else {
     fitCanvas(); // fuera del mapa, siempre 960×540
     if (state === "playing") update(dt);
-    else if (state === "won" || state === "lost") updateFx(dt);
+    else if (state === "won" || state === "lost") {
+      updateFx(dt);
+      if (llamaS) llamaS.animT += dt; // la llama sigue celebrando tras la victoria
+    }
     draw();
   }
   if (UI) UI.sync();

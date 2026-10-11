@@ -10,6 +10,7 @@ function fakeCtx(log) {
       get(target, k) {
         if (k in target) return target[k];
         if (k === "createLinearGradient") return () => ({ addColorStop() {} });
+        if (k === "measureText") return (s) => ({ width: String(s).length * 7 });
         return (...a) => log && log.push([k, ...a]);
       },
       set(target, k, v) {
@@ -185,9 +186,9 @@ assert.equal(run("Bo.x"), 3910);
 assert.equal(run("Bo.wind"), 0);
 assert.equal(run("shots.length"), 0);
 
-// P1-1 · La llama escupe hacia el enemigo aunque esté entre ella y el héroe.
+// P1-1 · La llama escupe (H) hacia el enemigo aunque esté entre ella y el héroe.
 run(
-  "reset(); enemies.forEach(e=>e.dead=true); var Q=enemies[1]; Q.dead=false; Q.cool=99; player.x=1000; world.llama=920; Q.x=960; Q.home=960; world.spit=0; shots.length=0; update(.001)",
+  "reset(); enemies.forEach(e=>e.dead=true); var Q=enemies[1]; Q.dead=false; Q.cool=99; player.x=1000; player.face=-1; cam=720; world.llama=920; Q.x=960; Q.home=960; shots.length=0; keys.add('KeyH'); update(.001); keys.clear(); for (let i=0;i<40 && !shots.some(s=>s.spit);i++) { world.llama=920; update(.016); }",
 );
 assert.ok(run("shots.find(s=>s.spit).vx") > 0);
 
@@ -764,7 +765,7 @@ run = makeGame();
 // Piquero: nunca dispara balas; se acerca, echa la pica atrás (≥0,3 s) y da la estocada.
 run(`reset(); enemies.forEach(e=>e.dead=true); var PQ=enemies[2]; PQ.dead=false; player.x=PQ.x-260; player.inv=999;
   var tWind=-1, tThrust=-1;
-  for (let i=0;i<600;i++){ cam=Math.max(0,player.x-280); world.spit=9; update(1/60);
+  for (let i=0;i<600;i++){ cam=Math.max(0,player.x-280); update(1/60);
     if (PQ.wind>0 && tWind<0) tWind=i; if (PQ.lunge>0 && tThrust<0) { tThrust=i; var thrAnim=PQ.anim; } }`);
 assert.equal(run("shots.filter(s=>!s.good).length"), 0);
 assert.ok(run("tWind") >= 0 && run("tThrust") > run("tWind"));
@@ -795,12 +796,12 @@ assert.ok(run("PQ.stun > 0 && PQ.wind === 0 && PQ.lunge === 0"));
 run(`reset(); enemies.forEach(e=>e.dead=true); var PD=enemies[3]; PD.dead=false; player.x=1000; player.inv=999;
   for (let i=0;i<60;i++){ update(1/60); player.x=1000; }`);
 assert.deepEqual(J("[PD.x === PD.home, PD.aggro, PD.anim]"), [true, false, "idle"]);
-run(`player.x=1400; var tw=-1, tl=-1; for (let i=0;i<300;i++){ world.spit=9; update(1/60); player.x=1400;
+run(`player.x=1400; var tw=-1, tl=-1; for (let i=0;i<300;i++){ update(1/60); player.x=1400;
   if (PD.wind>0 && tw<0) tw=i; if (PD.lunge>0 && tl<0) tl=i; }`);
 assert.equal(run("PD.aggro"), true);
 // La alerta dura DOG.notice completa sin moverse (aunque su enfriamiento ya estuviera a 0).
 run(`reset(); enemies.forEach(e=>e.dead=true); PD=enemies[3]; PD.dead=false; PD.cool=0; player.x=1400; player.inv=999;
-  var still=0; update(1/60); for (let i=0;i<60;i++){ world.spit=9; const x0=PD.x; update(1/60); player.x=1400; if (PD.alert>0 && PD.x===x0) still++; }`);
+  var still=0; update(1/60); for (let i=0;i<60;i++){ const x0=PD.x; update(1/60); player.x=1400; if (PD.alert>0 && PD.x===x0) still++; }`);
 assert.ok(run("still") / 60 >= 0.6, "alerta quieta: " + run("still"));
 assert.ok(run("tw") >= 0 && (run("tl") - run("tw")) / 60 >= 0.25);
 // Quien camina hacia la derecha sin disparar pierde como mucho un corazón con el primer perro.
@@ -961,6 +962,221 @@ assert.deepEqual(J("[canvas.width, canvas.height, canvas.dataset.layout]"), [960
 run("stageW = 390; drawMap(); uiAction('select', 0); uiAction('select', 0); fitCanvas()");
 assert.deepEqual(J("[state, canvas.width, canvas.height, canvas.dataset.layout]"), ["playing", 960, 540, "landscape"]);
 
+// ---------------------------------------------------------------------------
+// Escupitajo de la llama (especificación 01): cargas, recarga, H, objetivo, impacto,
+// reacciones, rescate automático, sonido, HUD y reinicio.
+run = makeGame();
+// Escenario: un solo arcabucero a la vista, cerca de la llama.
+const spitScene = `reset(); enemies.forEach(e=>e.dead=true); var S1=enemies[1]; S1.dead=false; S1.cool=99;
+  player.x=1000; player.inv=999; world.llama=llamaS.prev=920; S1.x=S1.home=1100; cam=720; shots.length=0;`;
+const tick = (n, dt = 1 / 60) => run(`for (let i=0;i<${n};i++){ world.llama=920; update(${dt}); }`);
+const pressH = () => run("keys.add('KeyH'); world.llama=920; update(1/60); keys.delete('KeyH'); world.llama=920; update(1/60)");
+// Iniciar partida: tres cargas, independientes de la munición y de las alforjas.
+run("reset()");
+assert.deepEqual(J("[world.spitCharges, world.spitRecharge, world.spitUsed, world.spitRescueUsed]"), [3, 0, false, false]);
+// H cerca de un enemigo: escupe (gira hacia él, anima, sale el proyectil) y gasta una carga.
+run(spitScene);
+assert.equal(run("findLlamaTarget() === S1"), true);
+pressH();
+assert.deepEqual(J("[world.spitCharges, llamaS.anim, llamaS.face, world.spitUsed]"), [2, "spit", 1, true]);
+assert.equal(run("shots.some(s=>s.spit)"), false); // aún infla los cachetes
+tick(12);
+assert.equal(run("shots.filter(s=>s.spit).length"), 1);
+assert.deepEqual(J("[player.ammo, world.loads]"), [24, 5]); // munición y alforjas intactas
+// Impacto en un soldado: 1 de daño, mancha, retroceso y aturdimiento de 0,5 s; no ataca.
+run("var hx0=S1.x; for (let i=0;i<60 && S1.hp===3;i++){ world.llama=920; update(1/60); }");
+assert.equal(run("S1.hp"), 2);
+assert.ok(run("S1.stun") > 0.4 && run("S1.stun") <= 0.5);
+assert.deepEqual(J("[S1.anim, S1.spat > 0, S1.x > hx0, S1.face]"), ["spat", true, true, -1]);
+assert.ok(run("particles.some(p=>p.color==='#c3eaa8')"));
+assert.ok(J("world.speech.map(b=>b.text)").includes("¡Puaj!"));
+run("S1.cool=0; var nb=shots.filter(s=>!s.good).length; for (let i=0;i<20;i++){ world.llama=920; update(1/60); }");
+assert.equal(run("shots.filter(s=>!s.good).length"), run("nb")); // aturdido: no dispara
+tick(30);
+assert.ok(run("S1.stun <= 0 && S1.huff > 0")); // se recupera, aún indignado
+// Mantener H no dispara en ráfaga: cada escupitajo pide una pulsación nueva.
+run(spitScene + "keys.add('KeyH'); for (let i=0;i<120;i++){ world.llama=920; update(1/60); } keys.clear()");
+assert.equal(run("world.spitCharges"), 3 - 1 + 0); // 2 s después: una gastada, ninguna recuperada aún
+// Pausa mínima de 0,4 s entre escupitajos.
+run(spitScene + "keys.add('KeyH'); update(1/60); keys.clear(); update(1/60); keys.add('KeyH'); update(1/60); keys.clear()");
+assert.equal(run("world.spitCharges"), 2);
+run("for (let i=0;i<30;i++){ world.llama=920; update(1/60); } keys.add('KeyH'); update(1/60); keys.clear()");
+assert.equal(run("world.spitCharges"), 1);
+// Sin objetivo (lejos o fuera de pantalla) no se gasta la carga.
+run(spitScene + "S1.x=S1.home=1400; cam=900;");
+pressH();
+assert.deepEqual(J("[world.spitCharges, world.spitUsed, !!world.spitPending]"), [3, false, false]);
+run("S1.x=S1.home=1100; cam=1300;"); // a distancia, pero fuera de cámara
+assert.equal(run("findLlamaTarget()"), null);
+// Elige al enemigo más cercano.
+run(spitScene + "var S2=enemies[2]; S2.dead=false; S2.x=S2.home=990;");
+assert.equal(run("findLlamaTarget() === S2"), true);
+// Un obstáculo sólido bloquea la trayectoria: sin objetivo ni gasto; el proyectil no lo atraviesa.
+run(spitScene + "SOLIDS.push({x:1020,y:GROUND-120,w:30,h:120});");
+assert.equal(run("findLlamaTarget()"), null);
+pressH();
+assert.equal(run("world.spitCharges"), 3);
+run("shots.push({x:1000,y:GROUND-60,w:12,h:10,vx:460,vy:0,life:1,good:true,damage:1,spit:true}); for (let i=0;i<20;i++) update(1/60)");
+assert.deepEqual(J("[S1.hp, shots.filter(s=>s.spit).length]"), [3, 0]);
+run("SOLIDS.length=0");
+// Recarga: empieza al gastar, una carga cada 6 s, nunca más de 3.
+run(spitScene + "world.spitCharges=0;");
+tick(60);
+assert.ok(run("world.spitRecharge") > 0.9 && run("world.spitCharges") === 0);
+tick(5 * 60 + 1);
+assert.equal(run("world.spitCharges"), 1);
+tick(12 * 60);
+assert.deepEqual(J("[world.spitCharges, world.spitRecharge]"), [3, 0]);
+tick(10 * 60);
+assert.equal(run("world.spitCharges"), 3);
+assert.equal(J("hudView(player, world, 0)").spitFill, 0);
+// En pausa la recarga no avanza (el bucle no llama a update()).
+run(spitScene + "world.spitCharges=1; world.spitRecharge=2; pause(); last=0; for (let i=1;i<=300;i++) loop(i*16)");
+assert.deepEqual(J("[state, world.spitCharges, world.spitRecharge]"), ["paused", 1, 2]);
+assert.equal(run("(pause(), state)"), "playing");
+// No se escupe fuera del juego (pausa, derrota) ni con el héroe caído.
+run(spitScene + "state='paused'");
+assert.equal(run("activateLlamaSpit()"), false);
+run("state='playing'; player.hp=0");
+assert.equal(run("activateLlamaSpit()"), false);
+// El aturdimiento no se acumula: varios escupitajos seguidos lo dejan en 0,5 s como mucho.
+run(spitScene + "S1.hp=9; S1.x=S1.home=1000; for (let k=0;k<3;k++) applySpitImpact(S1,{vx:400})");
+assert.ok(run("S1.stun") <= 0.5);
+// El perro también reacciona (sacude la cabeza) y sigue recibiendo el impacto pese a ser bajo.
+run(spitScene + "S1.dead=true; var DG=enemies[0]; DG.dead=false; DG.x=DG.home=1050; DG.cool=99; DG.aggro=true;");
+pressH();
+run("for (let i=0;i<60 && DG.hp===3;i++){ world.llama=920; update(1/60); }");
+assert.deepEqual(J("[DG.hp, DG.anim, DG.stun > 0]"), [2, "spat", true]);
+// Capitán: reacción especial la primera vez («¡Maldita llama!», más larga) y corta después.
+const bossScene = `reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var CP=enemies[8]; player.x=3700; player.inv=999;
+  world.llama=llamaS.prev=3620; CP.x=CP.home=3800; CP.cool=99; cam=3420; world.spitUsed=true; shots.length=0;`;
+run(bossScene + "applySpitImpact(CP,{vx:400})");
+assert.deepEqual(J("[CP.hp, CP.anim, CP.spatOnce, world.speech.map(b=>b.text)]"), [31, "spat", true, ["¡Maldita llama!"]]);
+assert.ok(run("CP.stun") > 0.5 && run("CP.stun") <= 0.8);
+assert.equal(run("llamaS.react"), "proud");
+run("CP.stun=0; world.speech.length=0; applySpitImpact(CP,{vx:400})");
+assert.deepEqual(J("[CP.hp, world.speech.length]"), [30, 0]);
+assert.ok(run("CP.stun") <= run("SPIT.bossStun"));
+// La reacción cancela la preparación del disparo del capitán.
+run(bossScene + "CP.wind=.3; CP.pat='low'; applySpitImpact(CP,{vx:400})");
+assert.equal(run("CP.wind"), 0);
+// Rescate automático: al llegar al capitán sin haber escupido en esta vida, la llama escupe
+// una vez sola (gasta una carga) y enseña la tecla.
+run(bossScene + "world.spitUsed=false; update(1/60)");
+assert.deepEqual(J("[world.spitRescueUsed, world.spitCharges, world.spitUsed, world.tip.text]"), [
+  true,
+  2,
+  false,
+  "¡Tu llama también sabe defenderse! Pulsa H para ayudarla",
+]);
+assert.equal(J("hudView(player, world, 0)").spitHint, true);
+run("for (let i=0;i<60 && CP.hp===32;i++){ world.llama=3620; update(1/60); }");
+assert.equal(run("CP.hp"), 31);
+// No se repite: ni en la misma vida, ni al reaparecer (aunque se repita el enfrentamiento).
+run("for (let i=0;i<8*60;i++){ world.llama=3620; update(1/60); }");
+assert.equal(run("world.spitCharges"), 3);
+assert.equal(run("shots.filter(s=>s.spit).length"), 0);
+run("player.hp=1; player.inv=0; hit(); update(1/60); respawn(); player.x=3700; player.inv=999; world.llama=3620; cam=3420; CP.x=3800; update(1/60)");
+assert.deepEqual(J("[world.spitCharges, world.spitUsed, world.spitRescueUsed, !!world.spitPending]"), [3, false, true, false]);
+// Si el jugador ya escupió en esta vida, no hay rescate.
+run(bossScene + "world.spitUsed=true; update(1/60)");
+assert.deepEqual(J("[world.spitRescueUsed, world.spitCharges]"), [false, 3]);
+// …ni sin cargas, ni lejos del capitán.
+run(bossScene + "world.spitUsed=false; world.spitCharges=0; update(1/60)");
+assert.equal(run("world.spitRescueUsed"), false);
+run(bossScene + "world.spitUsed=false; player.x=3000; world.llama=2920; cam=2720; update(1/60)");
+assert.equal(run("world.spitRescueUsed"), false);
+// Reiniciar la partida restablece la habilidad (y el rescate vuelve a estar disponible).
+run(bossScene + "world.spitCharges=0; world.spitRescueUsed=true; world.tip={text:'x',t:2}; reset()");
+assert.deepEqual(J("[world.spitCharges, world.spitRecharge, world.spitUsed, world.spitRescueUsed, world.tip]"), [3, 0, false, false, null]);
+// Personalidad: sorpresa al recibir daño, preocupación con poca vida, celebración al ganar.
+run(spitScene + "player.inv=0; hit(); world.llama=920; update(1/60)");
+assert.equal(run("llamaS.anim"), "surprise");
+run("player.hp=2; for (let i=0;i<60;i++){ player.x=1000; player.kb=0; world.llama=920; llamaS.prev=920; update(1/60); }");
+assert.equal(run("llamaS.anim"), "worry");
+run("player.hp=6; llamaS.still=0; for (let i=0;i<5*60;i++){ player.x=1000; player.kb=0; player.inv=999; world.llama=920; llamaS.prev=920; update(1/60); }");
+assert.equal(run("llamaS.anim"), "look");
+run(bossScene + "CP.hp=1; applySpitImpact(CP,{vx:400})");
+assert.deepEqual(J("[state, llamaS.anim]"), ["won", "celebrate"]);
+// HUD: cargas, progreso de la recarga y etiqueta accesible; la línea del canvas cabe.
+run(spitScene + "world.spitCharges=1; world.spitRecharge=3");
+hv = J("hudView(player, world, 0)");
+assert.deepEqual([hv.spit, hv.spitMax, hv.spitFill, hv.spitHint], [1, 3, 0.5, false]);
+assert.equal(hv.spitLabel, "Escupitajos de la llama: 1 de 3, recuperando");
+assert.deepEqual(J("[hudView(null,null,0).spit, hudView(null,null,0).spitFill]"), [3, 0]);
+assert.ok(run("hudLine()").endsWith("LLAMA ●○○"));
+assert.ok(run("player.hp=6; hudLine().length * 7.5 + 16 <= HUD_W"));
+// Dibujo sin sprites con escupitajo, mancha, enfado, globo y aviso: no lanza.
+run(bossScene + "world.spitUsed=false; update(1/60); applySpitImpact(CP,{vx:400}); CP.stun=0; for (let i=0;i<30;i++){ update(1/60); draw(); }");
+// Sonido: con el sonido apagado no se crea audio; encendido, cada efecto sintetiza nodos.
+const audioLog = [];
+function FakeAudio() {
+  audioLog.push("ctx");
+  const node = () =>
+    new Proxy(
+      {},
+      {
+        get: (t, k) =>
+          k in t
+            ? t[k]
+            : k === "connect"
+              ? (n) => n
+              : ["gain", "frequency", "Q"].includes(k)
+                ? (t[k] = new Proxy({}, { get: (p, m) => (m in p ? p[m] : () => {}), set: (p, m, v) => ((p[m] = v), true) }))
+                : () => {},
+        set: (t, k, v) => ((t[k] = v), true),
+      },
+    );
+  this.currentTime = 0;
+  this.sampleRate = 8000;
+  this.destination = node();
+  for (const m of ["createOscillator", "createGain", "createBiquadFilter", "createBufferSource"])
+    this[m] = () => (audioLog.push(m), node());
+  this.createBuffer = (c, n) => ({ getChannelData: () => new Float32Array(n) });
+}
+run = makeGame({ AudioContext: FakeAudio });
+run("reset(); sfx('spit'); sfx('splat'); sfx('recharge'); sfx('grumble'); tone()");
+assert.equal(audioLog.length, 0);
+run("sound=true; sfx('spit')");
+assert.ok(audioLog.includes("ctx") && audioLog.includes("createBiquadFilter") && audioLog.includes("createBufferSource"));
+for (const n of ["splat", "recharge", "grumble"]) {
+  const before = audioLog.length;
+  run(`sfx('${n}')`);
+  assert.ok(audioLog.length > before, "efecto " + n);
+}
+// En móvil el aviso del rescate señala el botón táctil.
+run = makeGame({ matchMedia: (q) => ({ matches: q === "(pointer: coarse)" }) });
+assert.equal(run("rescueTip()"), "¡Tu llama también sabe defenderse! Toca el botón LLAMA para ayudarla");
+// Botón táctil: existe en la página, usa la misma tecla (KeyH) y funciona con el sistema de toques.
+const html = fs.readFileSync("index.html", "utf8");
+assert.match(html, /<button[^>]*data-key="KeyH"[^>]*>/);
+run = makeGame();
+run(spitScene);
+run("keys.add('KeyH'); world.llama=920; update(1/60); keys.delete('KeyH')"); // = onpointerdown / onpointerup
+assert.equal(run("world.spitCharges"), 2);
+// Con sprites: la llama y los enemigos usan las nuevas animaciones; el arte real las define.
+run = makeGame({ ChankasSprites: SP, ChankasBackground: BG });
+run(spitScene + "keys.add('KeyH'); update(1/60); keys.clear(); for (let i=0;i<60 && S1.hp===3;i++){ world.llama=920; update(1/60); }");
+calls.length = 0;
+run("draw()");
+assert.ok(calls.some((c) => c.kind === "arcabucero" && c.anim === "spat"));
+assert.ok(run("fx.some(f=>f.kind==='splat')"));
+(function () {
+  const ctx = { console, Math, Uint8ClampedArray, parseInt };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync("art/sprites.js", "utf8"), ctx);
+  const L = ctx.ChankasSprites.list();
+  for (const a of ["spit", "proud", "surprise", "look", "worry", "celebrate"]) assert.ok(L.llama.anims[a], "llama." + a);
+  const d = ctx.ChankasSprites.duration("llama", "spit");
+  assert.ok(d >= 0.4 && d <= 0.6, "animación de escupir 0,4–0,6 s: " + d);
+  for (const k of ["perro", "arcabucero", "piquero", "capitan"]) assert.ok(L[k].anims.spat, k + ".spat");
+  assert.ok(L.splat && L.spit.box.w >= 12 && L.spit.box.w <= 18);
+  // Todos los fotogramas nuevos se construyen sin errores (colores válidos de la paleta).
+  for (const [k, anims] of [["llama", ["spit", "proud", "surprise", "look", "worry", "celebrate"]], ["perro", ["spat"]], ["arcabucero", ["spat"]], ["piquero", ["spat"]], ["capitan", ["spat"]], ["splat", ["burst"]], ["spit", ["fly"]]])
+    for (const a of anims) for (let i = 0; i < L[k].anims[a].frames; i++) ctx.ChankasSprites._grid(k, a, i);
+})();
+
 console.log(
-  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones), pulido (piquero cuerpo a cuerpo, perro con alerta, apacheta de la arena, aviso del jefe, contorno del héroe, mapa vertical, cartela).",
+  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones), pulido (piquero cuerpo a cuerpo, perro con alerta, apacheta de la arena, aviso del jefe, contorno del héroe, mapa vertical, cartela), escupitajo de la llama (cargas, recarga y pausa, H sin ráfagas, objetivo y obstáculos, impacto y aturdimiento, reacciones del capitán, rescate automático, personalidad, HUD, sonido, botón táctil, sprites).",
 );

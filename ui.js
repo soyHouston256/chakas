@@ -33,6 +33,10 @@
     game: byId("game-section"),
     hearts: byId("hud-hearts"),
     loads: byId("hud-loads"),
+    spit: byId("hud-spit"),
+    touchSpit: byId("touch-spit"),
+    touchSpitCount: byId("touch-spit-count"),
+    pauseSpit: byId("pause-spit"),
     ammo: byId("hud-ammo"),
     ammoMax: byId("hud-ammo-max"),
     fire: byId("hud-fire"),
@@ -62,9 +66,15 @@
     mpNotice: byId("mp-notice"),
     header: doc.querySelector(".site-header"),
   };
+  // Silueta de llama en píxeles (indicador de escupitajos).
+  const LLAMA =
+    '<svg width="20" height="20" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true">' +
+    '<path d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v2H6zM9 2h1v1H9zM6 3h2v2H6zM1 5h7v2H1zM0 5h1v1H0zM1 7h1v3H1zM3 7h1v3H3zM5 7h1v3H5zM7 7h1v3H7z"/>' +
+    '<rect x="7" y="1" width="1" height="1" fill="#16121A"/></svg>';
   let api = null,
     hearts = [],
     pips = [],
+    spitPips = [],
     routeItems = [],
     rows = [];
   const last = Object.create(null);
@@ -95,6 +105,17 @@
       s.className = "pip";
       el.loads.appendChild(s);
       pips.push(s);
+    }
+    spitPips = [];
+    if (el.spit) {
+      el.spit.innerHTML = "";
+      for (let i = 0; i < h.spitMax; i++) {
+        const s = doc.createElement("span");
+        s.className = "spit-pip";
+        s.innerHTML = LLAMA;
+        el.spit.appendChild(s);
+        spitPips.push(s);
+      }
     }
     if (el.ammoMax) el.ammoMax.textContent = h.maxAmmo;
     // Barra de ruta: una columna por etapa, con nudos de quipu (1..5) del color de la etapa.
@@ -220,6 +241,29 @@
     );
     put("loads", h.loads, (l) => pips.forEach((n, i) => n.classList.toggle("is-empty", i >= l)));
     put("loadLabel", h.loadLabel, (t) => el.loads.setAttribute("aria-label", t));
+    // Escupitajos: llenos, vacíos y el que se recupera rellenándose de abajo arriba.
+    put("spit", h.spit + "|" + h.spitFill, () =>
+      spitPips.forEach((n, i) => {
+        const charging = i === h.spit;
+        n.classList.toggle("is-empty", i >= h.spit);
+        n.classList.toggle("is-charging", charging);
+        n.style.setProperty("--fill", charging ? String(h.spitFill) : "0");
+      }),
+    );
+    put("spitLabel", h.spitLabel, (t) => el.spit && el.spit.setAttribute("aria-label", t));
+    put("spitBtn", h.spit, (c) => {
+      if (el.touchSpitCount) el.touchSpitCount.textContent = c;
+      if (el.touchSpit) {
+        el.touchSpit.classList.toggle("is-empty", c <= 0);
+        el.touchSpit.setAttribute("aria-disabled", c <= 0 ? "true" : "false");
+      }
+    });
+    // Durante el aviso del rescate se resaltan el indicador y el botón táctil.
+    put("spitHint", h.spitHint, (on) => {
+      if (el.touchSpit) el.touchSpit.classList.toggle("is-hint", on);
+      const block = el.spit && el.spit.closest(".hud-block");
+      if (block) block.classList.toggle("is-hint", on);
+    });
   }
   function syncRoute(r, names) {
     put("rStart", r.start + "|" + r.end, () => {
@@ -251,6 +295,7 @@
     put("pAmmo", v.hud.ammo, setText(el.pauseAmmo));
     put("pFire", v.hud.fire, setText(el.pauseFire));
     put("pBola", v.hud.bola, setText(el.pauseBola));
+    put("pSpit", v.hud.spit, setText(el.pauseSpit));
     put("pLoads", v.hud.loads, (l) => (el.pauseLoads.textContent = l + " de " + v.hud.maxLoads));
   }
   function syncMap(m) {

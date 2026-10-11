@@ -18,6 +18,8 @@
   --green: #6e8a47;
   --blue: #5b7bb0;
   --fire: #e9732b;
+  --spit: #c3eaa8;
+  --spit-dark: #79b46b;
   --ficcion: #e77a6b;
   /* Tipografía */
   --font-display: "Jersey 10", "Pixelify Sans", ui-monospace, monospace;
@@ -346,6 +348,72 @@ kbd {
 .pip.is-empty {
   background: var(--empty);
 }
+/* Escupitajos de la llama: tres llamas; la que se recupera se rellena de abajo arriba. */
+.spit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.spit-pips {
+  display: flex;
+  gap: 4px;
+}
+.spit-pip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--ground);
+}
+.spit-pip::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--fill, 0) * 100%);
+  background: var(--spit-dark);
+  opacity: 0.45;
+  transition: height 0.25s linear;
+}
+.spit-pip svg {
+  position: relative;
+}
+.spit-pip svg path,
+.llama-ico path {
+  fill: var(--spit);
+}
+.spit-pip.is-empty svg path {
+  fill: var(--empty);
+}
+.spit-key {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.spit-key kbd {
+  font-size: 13px;
+  padding: 3px 5px 2px;
+  margin-right: 4px;
+}
+.hud-spit.is-hint .spit-pips,
+.touch .touch-spit.is-hint {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+  animation: hint-pulse 0.8s steps(2, jump-none) infinite alternate;
+}
+@keyframes hint-pulse {
+  to {
+    outline-color: var(--spit);
+  }
+}
+@media (pointer: coarse) {
+  .spit-key {
+    display: none; /* en móvil se usa el botón táctil de la llama */
+  }
+}
 .hud-quipu {
   margin-left: auto;
   align-items: flex-end;
@@ -576,7 +644,7 @@ body:not(.has-ui) [data-action] {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 .inventory li {
@@ -897,6 +965,7 @@ body:not(.has-ui) [data-action] {
     gap: 14px;
   }
   .inventory {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
   .inventory li {
@@ -1036,6 +1105,40 @@ body:not(.has-ui) [data-action] {
 }
 .touch button:active {
   background: var(--cochinilla);
+}
+/* Botón de la llama (≥48×48): silueta, nombre y cargas disponibles. */
+.touch .touch-spit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 56px;
+  background: var(--panel-2);
+  box-shadow: inset 0 -3px 0 0 var(--spit-dark);
+}
+.touch .touch-spit:active {
+  background: var(--spit-dark);
+}
+.touch-count {
+  min-width: 20px;
+  padding: 2px 4px;
+  background: var(--spit);
+  color: var(--ground);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.touch .touch-spit.is-empty {
+  color: var(--dim-2);
+  box-shadow: none;
+}
+.touch .touch-spit.is-empty .llama-ico path {
+  fill: var(--empty);
+}
+.touch .touch-spit.is-empty .touch-count {
+  background: var(--empty);
+  color: var(--muted);
 }
 @media (min-width: 1000px) and (pointer: fine) {
   .touch {
