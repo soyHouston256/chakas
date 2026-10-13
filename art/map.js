@@ -56,7 +56,7 @@
     portrait: {
       name: 'portrait', x: 188, y: 10, w: 390, h: 520, k: 2, boost: 1.15, labelBoost: 1.45,
       cart: [204, 22], cartMax: 288, compass: [530, 100], sea: [270, 476], legend: null,
-      labelDx: [-20, -16, -42, 0, 0], over: { COLLASUYU: [498, 510], Titicaca: [534, 474], CUNTISUYU: [392, 474] }
+      labelDx: [0, 0, 0, 0, 0], over: { COLLASUYU: [498, 510], Titicaca: [534, 474], CUNTISUYU: [392, 474] }
     }
   };
   function viewFor(o) {
@@ -79,7 +79,7 @@
   // Cartela del título: el marco se ajusta al texto medido (múltiplo del píxel del mapa) y,
   // si aun así no cabe en maxW, se reduce el cuerpo de letra. Nunca recorta el texto.
   // measure(texto, px) -> ancho del texto en 'bold {px}px Georgia'.
-  var CART_T1 = 'CAMINO DE LA RESISTENCIA', CART_T2 = '— 1536 —', CART_PAD = 14, CART_STROKE = 4;
+  var CART_T1 = 'CAMINO DE LA RESISTENCIA', CART_T2 = '— 1536-1539 —', CART_PAD = 14, CART_STROKE = 4;
   function cartoucheLayout(measure, maxW, boost) {
     boost = boost || 1;
     maxW = Math.floor((maxW || 300) / S) * S;
@@ -94,53 +94,55 @@
   /* ------------------------------------------------------------------ */
   /* Etapas                                                              */
   /* ------------------------------------------------------------------ */
-  // node: posición del icono en pantalla (base 960×540). Las etapas están muy juntas a esta
-  // escala (Lima y El Callao distan 0.1°), así que el icono se separa y una línea de guía
-  // señala el punto geográfico real.
+  // node: posición del icono en pantalla (base 960×540). Las cuatro primeras etapas están a
+  // menos de 1,5° entre sí (Cusco, Valle Sagrado, Vitcos, Espíritu Pampa), así que el icono se
+  // separa y una línea de guía señala el punto geográfico real.
+  // Ruta (aprobada): la retirada de Manco Inca de 1536–1539 hacia Vilcabamba y, como cierre
+  // inventado, una marcha al mar hasta El Callao (FICCIÓN, marcada como tal).
   var stages = [
     {
       id: 'sacsayhuaman', name: 'Sacsayhuamán', place: 'Cusco', lat: -13.51, lon: -71.98,
-      year: '1536', node: [510, 412], icon: 'fort',
+      year: '1536', node: [528, 440], icon: 'fort',
       history: 'Mayo de 1536: Manco Inca cerca el Cusco. En el asalto a Sacsayhuamán muere Juan Pizarro, pero la fortaleza cae en manos españolas.',
       fiction: 'Ficción: tu guerrero y su llama abren el paso de los andenes.',
       status: 'jugable', playable: true
     },
     {
       id: 'ollantaytambo', name: 'Ollantaytambo', place: 'Valle Sagrado', lat: -13.26, lon: -72.26,
-      year: '1537', node: [452, 344], icon: 'terraces',
-      history: 'Enero de 1537: Manco Inca desvía las aguas e inunda la llanura; la caballería de Hernando Pizarro se retira de noche.',
+      year: '1537', node: [506, 338], icon: 'terraces',
+      history: 'Hacia enero de 1537: desde los andenes de Ollantaytambo, Manco Inca rechaza a Hernando Pizarro; las aguas desviadas inundan la llanura y la caballería se retira de noche.',
       fiction: 'Ficción: el jefe será Hernando Pizarro a caballo.',
       status: 'proximamente', playable: false
     },
     {
-      id: 'desfiladeros', name: 'Los desfiladeros', place: 'Parcos, cuenca del Mantaro', lat: -12.63, lon: -74.62,
-      year: '1536', node: [392, 420], icon: 'gorge',
-      history: '1536: las tropas de Quizo Yupanqui emboscan en las quebradas a las columnas de auxilio; la de Diego Pizarro cae cerca de Parcos.',
-      fiction: 'Ficción: las rocas vuelven a rodar desde las laderas.',
+      id: 'laconvencion', name: 'La Convención', place: 'Vitcos (Rosaspata)', lat: -13.10, lon: -72.94,
+      year: '1537', node: [420, 292], icon: 'peaks',
+      history: 'Tras Ollantaytambo, Manco Inca se retira por el valle del Vilcabamba (hoy provincia de La Convención) hasta Vitcos. En julio de 1537 Rodrigo Orgóñez saquea Vitcos y toma prisioneros, pero Manco escapa.',
+      fiction: 'Ficción: cubres la retirada por los puentes colgantes del valle.',
       status: 'proximamente', playable: false
     },
     {
-      id: 'lima', name: 'Ciudad de los Reyes', place: 'Lima', lat: -12.05, lon: -77.04,
-      year: '1536', node: [344, 292], icon: 'city',
-      history: 'Agosto de 1536: Quizo Yupanqui asalta Lima, pero es rechazado y herido de muerte; sus tropas vuelven a la sierra.',
-      fiction: 'Ficción: el juego imagina otro final. Jefe: Francisco Pizarro.',
+      id: 'vilcabamba', name: 'Vilcabamba', place: 'Espíritu Pampa', lat: -12.91, lon: -73.21,
+      year: '1539', node: [364, 404], icon: 'ruins',
+      history: 'En la selva de Vilcabamba (identificada con Espíritu Pampa) nace un Estado inca independiente. Manco escapa en 1539 a la campaña de Gonzalo Pizarro; los incas de Vilcabamba resisten hasta 1572.',
+      fiction: 'Ficción: defiendes la ciudad escondida entre la niebla.',
       status: 'proximamente', playable: false
     },
     {
       id: 'callao', name: 'El Callao', place: 'Bahía de Lima', lat: -12.06, lon: -77.15,
-      year: '1536', node: [262, 360], icon: 'ships',
-      history: 'La bahía del Callao era el fondeadero de Lima; por mar, Pizarro pidió auxilio a Panamá, Guatemala y Nicaragua.',
-      fiction: 'Ficción: batalla inventada. Quema los galeones «La Codiciosa» y «San Avaricio».',
+      year: 'Ficción', node: [252, 352], icon: 'ships', fictional: true,
+      history: 'La bahía del Callao era el fondeadero de Lima; durante el cerco de 1536 Pizarro pidió auxilio por mar. En 1536 Quizo Yupanqui atacó Lima y fue rechazado; la marcha al mar y la quema de barcos de esta etapa no ocurrieron.',
+      fiction: 'Ficción: toda esta etapa es inventada. La marcha al mar y la quema de los galeones «La Codiciosa» y «San Avaricio» no ocurrieron.',
       status: 'proximamente', playable: false
     }
   ];
-  // Puntos intermedios de la ruta (Qhapaq Ñan por la sierra): Pisac/Calca, Abancay–Vilcas,
-  // Jauja, valle del Rímac. Coordenadas de pantalla base.
+  // Puntos intermedios de la ruta: Valle Sagrado, abra de Panticalla, valle del Vilcabamba,
+  // y la marcha (inventada) por la sierra hasta la costa. Coordenadas de pantalla base.
   var WAYPOINTS = [
-    [[492, 368]],
-    [[418, 372]],
-    [[372, 360], [362, 318]],
-    [[300, 300]]
+    [[520, 392]],
+    [[470, 300]],
+    [[384, 340]],
+    [[318, 400], [282, 372]]
   ];
 
   function statusOf(i, progress) {
@@ -515,34 +517,30 @@
       '..kdssdssdssdssdk.',
       '.kkkkkkkkkkkkkkkkk'
     ],
-    gorge: [
-      'kk..............kk',
-      'Hhk......s.....kHh',
-      'HHhk..........khHH',
-      'hHHhk...s....khHHh',
-      'HhHHhk......khHHhH',
-      'hHhhHhk....khhHhHh',
-      'HHhHhHhk..khHhHhHH',
-      'hHHhHHhhkkhhHHhHHh',
-      'HhHHhHhkbBkhHhHHhH',
-      'hHhHHhkbBbbkhHHhHh',
+    peaks: [
+      '.......kk.........',
+      '......kwwk........',
+      '.....kwwwwk...kk..',
+      '....kwwsswk..kwwk.',
+      '...kssssssskkwsssk',
+      '..ksssdsssssksssdk',
+      '..kssdddsssdssdddk',
+      '.kggssddsddddsdggk',
+      'kgGgggsdddsddgggGk',
+      'kgggGgggggggGgggGk',
       'kkkkkkkkkkkkkkkkkk'
     ],
-    city: [
-      '.......k..........',
-      '......kyk.........',
-      '.......k..........',
-      '......kwk.........',
-      '.....kwwwk...kk...',
-      '..kk.kwkwk.kkRRk..',
-      '.kRRkkwwwkkRRRRRk.',
-      'kRRRRkwwwkwwwwwwk.',
-      'k.k.k.k.k.k.k.k.k.',
-      'kSkSkSkSkSkSkSkSk.',
-      'kSssSssSssSssSssk.',
-      'ksdsssdsskkssdssk.',
-      'kssdsssdkkksssdsk.',
-      'kkkkkkkkkkkkkkkkk.'
+    ruins: [
+      '.......kkkk.......',
+      '......kSssSk......',
+      '......ksdsdk......',
+      '....kkkkkkkkkk....',
+      '....kSssskSssk....',
+      '..kkkkkkkkkkkkkk..',
+      '.GkSsssdkksssdskG.',
+      'GgkssdsskksdsssdkG',
+      'gGkSssdskksssdsskg',
+      'kkkkkkkkkkkkkkkkkk'
     ],
     ships: [
       '....k.........k...',

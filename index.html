@@ -5,6 +5,31 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#16121A" />
     <title>CHANKAS · Camino de resistencia</title>
+    <meta name="description" content="Acción lateral pixel art en los Andes desde 1536. Con tu huaraca y tu llama, recorre el camino de la resistencia de Sacsayhuamán a Vilcabamba." />
+    <link rel="canonical" href="https://chankas.maxflow.ink/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CHANKAS" />
+    <meta property="og:locale" content="es_PE" />
+    <meta property="og:url" content="https://chankas.maxflow.ink/" />
+    <meta property="og:title" content="CHANKAS · Camino de resistencia" />
+    <meta property="og:description" content="La resistencia comienza en los Andes. Acción lateral pixel art: huaraca, llama y cinco etapas de Sacsayhuamán a El Callao." />
+    <meta property="og:image" content="https://chankas.maxflow.ink/assets/keyart-social.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="554" />
+    <meta property="og:image:alt" content="Un guerrero inca con su huaraca y su llama frente a soldados españoles, con los Andes nevados al fondo." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="CHANKAS · Camino de resistencia" />
+    <meta name="twitter:description" content="La resistencia comienza en los Andes. Acción lateral pixel art con huaraca y llama." />
+    <meta name="twitter:image" content="https://chankas.maxflow.ink/assets/keyart-social.jpg" />
+    <meta name="twitter:image:alt" content="Un guerrero inca con su huaraca y su llama frente a soldados españoles, con los Andes nevados al fondo." />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Chankas" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -14,267 +39,290 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body data-state="menu">
-    <header class="site-header">
-      <a class="brand" href="./">
-        <svg class="pix" width="40" height="40" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M4 0h2v2h2v2h2v2H8v2H6v2H4V8H2V6H0V4h2V2h2z" fill="#A8301F"/><path d="M4 2h2v2h2v2H6v2H4V6H2V4h2z" fill="#E9B53B"/><rect x="4" y="4" width="2" height="2" fill="#16121A"/></svg>
-        <span class="brand-text">
-          <span class="brand-name">CHANKAS</span>
-          <span class="brand-sub">CAMINO DE RESISTENCIA</span>
-        </span>
-      </a>
-      <nav class="site-nav" aria-label="Opciones">
-        <button type="button" class="btn notch" id="nav-map" data-action="map" data-needs-map hidden>
-          <svg width="18" height="18" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 1h3v1h3V1h3v8H6V8H3v1H0z" fill="none" stroke="#E9B53B" stroke-width="1"/></svg>
-          Mapa del camino
-        </button>
-        <button type="button" class="btn notch" id="sound" aria-pressed="false">
-          <svg width="18" height="18" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 3h2l3-3v9L2 6H0z" fill="#F2E6CC"/><path class="snd-off" d="M6 3h1v1H6zM8 3h1v1H8zM7 4h1v1H7zM6 5h1v1H6zM8 5h1v1H8z" fill="#D8432F"/><path class="snd-on" d="M6 3h1v3H6zM8 2h1v5H8z" fill="#E9B53B"/></svg>
-          <span>Sonido: <span data-sound-label>no</span></span>
-        </button>
-      </nav>
-    </header>
-    <div class="tocapu" aria-hidden="true"></div>
-
+    <h1 class="sr-only">CHANKAS · Camino de resistencia</h1>
     <main class="page">
-      <div class="intro">
-        <div class="intro-head">
-          <span class="eyebrow">PRIMERA EXPEDICIÓN · AÑO 1536</span>
-          <h1>Una piedra puede cambiar el camino.</h1>
-        </div>
-        <p>Recorre los andenes, abastece tu manta y abre paso junto a tu llama.</p>
-      </div>
+      <section class="game" id="game-section" aria-label="Juego">
+        <div class="play" id="play">
+          <div class="stage" id="stage" data-state="menu">
+            <canvas
+              id="game"
+              width="960"
+              height="540"
+              aria-label="Juego de acción lateral Chankas"
+            ></canvas>
 
-      <section class="game notch" id="game-section" aria-label="Juego">
-        <div class="hud" id="hud">
-          <div class="hud-block">
-            <span class="hud-label" aria-hidden="true">VIDA</span>
-            <div class="hearts" id="hud-hearts" role="img" aria-label="Vida: 6 de 6"></div>
-          </div>
-          <div class="weapons" role="group" aria-label="Armas">
-            <div class="weapon is-selected" data-weapon="J" aria-current="true">
-              <kbd>J</kbd>
-              <svg width="24" height="18" viewBox="0 0 8 6" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 0h4v1h1v1h1v3H7v1H1V5H0V2h1V1h1z" fill="#9C948A"/><path d="M2 1h2v1H2zM1 2h1v1H1z" fill="#D9D2C5"/></svg>
-              <span class="weapon-text">
-                <span class="weapon-name">HUARACA</span>
-                <span class="weapon-count"><span id="hud-ammo">24</span><span class="dim">/<span id="hud-ammo-max">24</span></span></span>
-              </span>
-            </div>
-            <div class="weapon" data-weapon="K">
-              <kbd>K</kbd>
-              <svg width="21" height="27" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h1v2h1v1h1v1h1v3H6v1H5v1H2V8H1V7H0V4h1V3h1V1h1z" fill="#E9732B"/><rect x="2" y="5" width="3" height="3" fill="#E9B53B"/></svg>
-              <span class="weapon-text">
-                <span class="weapon-name">FUEGO</span>
-                <span class="weapon-count" id="hud-fire">5</span>
-              </span>
-            </div>
-            <div class="weapon" data-weapon="L">
-              <kbd>L</kbd>
-              <svg width="24" height="24" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><rect x="4" y="2" width="1" height="3" fill="#DCCFB4"/><rect x="2" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="5" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="3" y="0" width="3" height="2" fill="#C9A26B"/><rect x="0" y="6" width="3" height="3" fill="#C9A26B"/><rect x="6" y="6" width="3" height="3" fill="#C9A26B"/></svg>
-              <span class="weapon-text">
-                <span class="weapon-name">BOLAS</span>
-                <span class="weapon-count" id="hud-bola">3</span>
-              </span>
-            </div>
-          </div>
-          <div class="hud-block hud-spit">
-            <span class="hud-label" aria-hidden="true">ESCUPITAJOS</span>
-            <div class="spit-row">
-              <div class="spit-pips" id="hud-spit" role="img" aria-label="Escupitajos de la llama: 3 de 3"></div>
-              <span class="spit-key" aria-hidden="true"><kbd>H</kbd> ESCUPIR</span>
-            </div>
-          </div>
-          <div class="hud-block">
-            <span class="hud-label" aria-hidden="true">CARGA DE LA LLAMA</span>
-            <div class="pips" id="hud-loads" role="img" aria-label="Carga de la llama: 5 de 5"></div>
-          </div>
-          <div class="hud-block hud-quipu">
-            <span class="hud-label">QUIPU</span>
-            <span class="quipu" id="hud-quipu">0000</span>
-          </div>
-        </div>
-        <div class="tocapu tocapu-sm" aria-hidden="true"></div>
-
-        <div class="stage" id="stage" data-state="menu">
-          <canvas
-            id="game"
-            width="960"
-            height="540"
-            aria-label="Juego de acción lateral Chankas"
-          ></canvas>
-
-          <section class="screen title-screen" id="title-screen" aria-labelledby="title-logo">
-            <div class="title-panel">
-              <div class="title-head">
-                <span class="eyebrow">HISTORIA ALTERNATIVA · 1536</span>
-                <h2 class="title-logo" id="title-logo">CHANKAS</h2>
-                <span class="sub">CAMINO DE RESISTENCIA</span>
-              </div>
-              <nav class="menu" aria-label="Menú principal">
-                <button type="button" class="menu-item is-current" data-action="start">
-                  <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                  Comenzar expedición
-                </button>
-                <button type="button" class="menu-item" data-action="map" data-needs-map hidden>
-                  <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                  Continuar camino
-                </button>
-                <button type="button" class="menu-item menu-sound" data-action="sound" aria-pressed="false">
-                  <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                  Sonido <span class="value" data-sound-label>no</span>
-                </button>
-              </nav>
-              <div class="title-foot">
-                <span class="keys-hint"><kbd>↑</kbd><kbd>↓</kbd> elegir <kbd>ENTER</kbd> aceptar</span>
-                <span>Personajes ficticios, arte y sonidos originales. v0.1</span>
-              </div>
-            </div>
-            <div class="tocapu-v" aria-hidden="true"></div>
-          </section>
-
-          <section class="screen pause-screen" id="pause-screen" role="dialog" aria-modal="true" aria-labelledby="pause-heading">
-            <div class="pause-box notch-gold">
-              <div class="tocapu" aria-hidden="true"></div>
-              <div class="pause-grid">
-                <div class="pause-menu">
-                  <h2 class="pause-heading" id="pause-heading">PAUSA</h2>
-                  <nav class="menu" aria-label="Menú de pausa">
-                    <button type="button" class="menu-item is-current" data-action="resume">
-                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                      Continuar
-                    </button>
-                    <button type="button" class="menu-item" data-action="restart">
-                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                      Reiniciar etapa
-                    </button>
-                    <button type="button" class="menu-item" data-action="map" data-needs-map hidden>
-                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                      Mapa del camino
-                    </button>
-                    <button type="button" class="menu-item menu-sound" data-action="sound" aria-pressed="false">
-                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                      Sonido <span class="value" data-sound-label>no</span>
-                    </button>
-                    <button type="button" class="menu-item menu-quiet" data-action="title">
-                      <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
-                      Salir al título
-                    </button>
-                  </nav>
+            <!-- HUD superpuesto al juego (ui.js solo escribe cuando cambia un valor) -->
+            <div class="hud" id="hud">
+              <div class="hud-left">
+                <div class="hearts" id="hud-hearts" role="img" aria-label="Vida: 6 de 6"></div>
+                <div class="hud-panel hud-res" role="group" aria-label="Armas y provisiones">
+                  <span class="res" data-weapon="J" title="Piedras de huaraca (J)">
+                    <span class="ico"><svg viewBox="0 0 8 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="#2a2228" d="M2 0h4v1H2zM1 1h1v1H1zM6 1h1v1H6zM0 2h1v1H0zM7 2h1v1H7zM0 3h1v1H0zM7 3h1v1H7zM0 4h1v1H0zM7 4h1v1H7zM1 5h1v1H1zM7 5h1v1H7zM2 6h5v1H2z"/><path fill="#e4ddd0" d="M2 1h2v1H2zM1 2h2v1H1zM1 3h1v1H1z"/><path fill="#a39b90" d="M4 1h2v1H4zM3 2h4v1H3zM2 3h5v1H2zM1 4h5v1H1zM2 5h3v1H2z"/><path fill="#6f6558" d="M6 4h1v1H6zM5 5h2v1H5z"/></svg></span><span class="x" aria-hidden="true">×</span><span id="hud-ammo">24</span><span class="sr-only"> piedras de huaraca</span>
+                  </span>
+                  <span class="res" data-weapon="K" title="Piedras de fuego (K)">
+                    <span class="ico"><svg viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#e9732b" d="M3 0h1v1H3zM3 1h2v1H3zM2 2h1v1H2zM4 2h1v1H4zM1 3h2v1H1zM4 3h2v1H4zM1 4h1v1H1zM5 4h1v1H5zM0 5h1v1H0zM6 5h1v1H6zM0 6h1v1H0zM6 6h1v1H6zM1 7h1v1H1zM5 7h1v1H5zM2 8h3v1H2z"/><path fill="#e9b53b" d="M3 2h1v1H3zM3 3h1v1H3zM2 4h3v1H2zM1 5h2v1H1zM4 5h2v1H4zM1 6h2v1H1zM5 6h1v1H5zM2 7h3v1H2z"/><path fill="#fff1c0" d="M3 5h1v1H3zM3 6h2v1H3z"/></svg></span><span class="x" aria-hidden="true">×</span><span id="hud-fire">5</span><span class="sr-only"> piedras de fuego</span>
+                  </span>
+                  <span class="res" data-weapon="L" title="Boleadoras (L)">
+                    <span class="ico"><svg viewBox="0 0 11 11" shape-rendering="crispEdges" aria-hidden="true"><path fill="#2a2228" d="M4 0h2v1H4zM3 1h1v1H3zM6 1h1v1H6zM3 2h1v1H3zM6 2h1v1H6zM1 7h2v1H1zM7 7h2v1H7zM0 8h1v1H0zM3 8h1v1H3zM6 8h1v1H6zM9 8h1v1H9zM0 9h1v1H0zM3 9h1v1H3zM6 9h1v1H6zM9 9h1v1H9zM1 10h2v1H1zM7 10h2v1H7z"/><path fill="#e4ddd0" d="M4 1h1v1H4zM1 8h1v1H1zM7 8h1v1H7z"/><path fill="#a39b90" d="M5 1h1v1H5zM4 2h2v1H4zM2 8h1v1H2zM8 8h1v1H8zM1 9h2v1H1zM7 9h2v1H7z"/><path fill="#c9a26b" d="M4 3h2v1H4zM4 4h2v1H4zM3 5h1v1H3zM6 5h1v1H6zM2 6h1v1H2zM7 6h1v1H7zM3 7h1v1H3zM6 7h1v1H6z"/></svg></span><span class="x" aria-hidden="true">×</span><span id="hud-bola">3</span><span class="sr-only"> boleadoras</span>
+                  </span>
+                  <span class="res res-loads" id="hud-loads" role="img" aria-label="Carga de la llama: 5 de 5" title="Carga de la llama (recarga con E)">
+                    <span class="ico llama-ico"><svg viewBox="0 0 10 11" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v1H6zM6 2h1v1H6zM8 2h2v1H8zM6 3h3v1H6zM6 4h2v1H6zM6 5h2v1H6zM1 6h7v1H1zM0 7h8v1H0zM1 8h7v1H1zM1 9h1v1H1zM3 9h1v1H3zM6 9h1v1H6zM8 9h1v1H8zM1 10h1v1H1zM3 10h1v1H3zM6 10h1v1H6zM8 10h1v1H8z"/><path fill="#16121a" d="M7 2h1v1H7z"/></svg></span><span class="x" aria-hidden="true">×</span><span id="hud-loads-n" aria-hidden="true">5</span>
+                  </span>
                 </div>
-                <div class="pause-info">
-                  <div class="pause-top">
-                    <div class="stack">
-                      <span class="label" id="pause-stage">ETAPA I DE V</span>
-                      <span class="pause-stage-name" id="pause-stage-name">Sacsayhuamán</span>
-                    </div>
-                    <div class="stack end">
-                      <span class="label">QUIPU</span>
-                      <span class="quipu" id="pause-quipu">0000</span>
-                    </div>
+              </div>
+              <div class="hud-right">
+                <div class="hud-top">
+                  <div class="hud-panel hud-stage">
+                    <span class="hud-emblem"><svg viewBox="0 0 12 11" shape-rendering="crispEdges" aria-hidden="true"><path fill="#2a2228" d="M4 0h4v1H4zM2 1h2v1H2zM8 1h2v1H8zM1 2h1v1H1zM10 2h1v1H10zM1 3h1v1H1zM10 3h1v1H10zM0 4h1v1H0zM11 4h1v1H11zM0 5h1v1H0zM11 5h1v1H11zM0 6h1v1H0zM11 6h1v1H11zM1 7h1v1H1zM10 7h1v1H10zM1 8h1v1H1zM10 8h1v1H10zM2 9h2v1H2zM8 9h2v1H8zM4 10h4v1H4z"/><path fill="#e4ddd0" d="M4 1h2v1H4zM2 2h3v1H2zM2 3h2v1H2zM1 4h2v1H1zM1 5h1v1H1z"/><path fill="#a39b90" d="M6 1h2v1H6zM5 2h4v1H5zM4 3h5v1H4zM3 4h6v1H3zM2 5h7v1H2zM1 6h7v1H1zM2 7h5v1H2zM2 8h4v1H2z"/><path fill="#6f6558" d="M9 2h1v1H9zM9 3h1v1H9zM9 4h2v1H9zM9 5h2v1H9zM8 6h3v1H8zM7 7h3v1H7zM6 8h4v1H6zM4 9h4v1H4z"/></svg></span>
+                    <span class="hud-stage-text">
+                      <span class="hud-stage-name" id="hud-stage-name">I · Sacsayhuamán</span>
+                      <span class="hud-stage-sub" id="hud-stage-sub">Cusco · 1536</span>
+                    </span>
                   </div>
-                  <h3 class="label">LO QUE LLEVAS EN LA MANTA</h3>
-                  <ul class="inventory">
-                    <li>
-                      <svg width="40" height="30" viewBox="0 0 8 6" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 0h4v1h1v1h1v3H7v1H1V5H0V2h1V1h1z" fill="#9C948A"/><path d="M2 1h2v1H2zM1 2h1v1H1z" fill="#D9D2C5"/></svg>
-                      <span>Piedras</span>
-                      <span class="inv-count"><span id="pause-ammo">24</span><span class="dim">/24</span></span>
-                      <kbd>J</kbd>
-                    </li>
-                    <li>
-                      <svg width="28" height="36" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h1v2h1v1h1v1h1v3H6v1H5v1H2V8H1V7H0V4h1V3h1V1h1z" fill="#E9732B"/><rect x="2" y="5" width="3" height="3" fill="#E9B53B"/></svg>
-                      <span>Piedras de fuego</span>
-                      <span class="inv-count" id="pause-fire">5</span>
-                      <kbd>K</kbd>
-                    </li>
-                    <li>
-                      <svg width="36" height="36" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><rect x="4" y="2" width="1" height="3" fill="#DCCFB4"/><rect x="2" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="5" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="3" y="0" width="3" height="2" fill="#C9A26B"/><rect x="0" y="6" width="3" height="3" fill="#C9A26B"/><rect x="6" y="6" width="3" height="3" fill="#C9A26B"/></svg>
-                      <span>Boleadoras</span>
-                      <span class="inv-count" id="pause-bola">3</span>
-                      <kbd>L</kbd>
-                    </li>
-                    <li>
-                      <svg class="llama-ico" width="36" height="36" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v2H6zM9 2h1v1H9zM6 3h2v2H6zM1 5h7v2H1zM0 5h1v1H0zM1 7h1v3H1zM3 7h1v3H3zM5 7h1v3H5zM7 7h1v3H7z"/><rect x="7" y="1" width="1" height="1" fill="#16121A"/></svg>
-                      <span>Escupitajos de la llama</span>
-                      <span class="inv-count"><span id="pause-spit">3</span><span class="dim">/3</span></span>
-                      <kbd>H</kbd>
-                    </li>
-                  </ul>
-                  <p class="pause-hint">
-                    Acércate a tu llama y pulsa <kbd>E</kbd> para recargar piedras. Su carga baja con
-                    cada recarga (<span id="pause-loads">5 de 5</span>) y se repone en cada apacheta.
-                    Pulsa <kbd>H</kbd> y tu llama escupe al enemigo más cercano: recupera un
-                    escupitajo cada 6 segundos.
-                  </p>
+                  <button type="button" class="hud-btn" data-action="fullscreen" data-fs aria-pressed="false" aria-label="Pantalla completa (F)" title="Pantalla completa (F)"><svg viewBox="0 0 10 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h3v1H0zM7 0h3v1H7zM0 1h1v1H0zM9 1h1v1H9zM0 2h1v1H0zM9 2h1v1H9zM0 5h1v1H0zM9 5h1v1H9zM0 6h1v1H0zM9 6h1v1H9zM0 7h3v1H0zM7 7h3v1H7z"/></svg></button>
+                  <button type="button" class="hud-btn" data-action="pause" aria-label="Pausa (P)" title="Pausa (P)"><svg viewBox="0 0 6 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h2v1H0zM4 0h2v1H4zM0 1h2v1H0zM4 1h2v1H4zM0 2h2v1H0zM4 2h2v1H4zM0 3h2v1H0zM4 3h2v1H4zM0 4h2v1H0zM4 4h2v1H4zM0 5h2v1H0zM4 5h2v1H4zM0 6h2v1H0zM4 6h2v1H4z"/></svg></button>
+                </div>
+                <div class="hud-panel hud-quipu"><span class="hud-label">QUIPU</span><span class="quipu" id="hud-quipu">0000</span></div>
+              </div>
+            </div>
+
+            <section class="screen title-screen" id="title-screen" aria-labelledby="title-logo">
+              <div class="tocapu-v" aria-hidden="true"></div>
+              <div class="title-panel">
+                <div class="title-head">
+                  <span class="eyebrow">HISTORIA ALTERNATIVA · DESDE 1536</span>
+                  <h2 class="title-logo" id="title-logo">CHANKAS</h2>
+                  <span class="sub">CAMINO DE RESISTENCIA</span>
+                </div>
+                <div class="expedition-options">
+                  <h3 id="difficulty-heading" class="label">ELIGE TU DESAFÍO</h3>
+                  <fieldset id="difficulty-selector" aria-labelledby="difficulty-heading" aria-describedby="difficulty-note">
+                    <legend class="sr-only">Complejidad de la expedición</legend>
+                    <label title="Aprende el camino. Más recursos y margen de reacción."><input type="radio" name="difficulty" value="chasqui" /><strong>Chasqui</strong><span>Más recursos</span></label>
+                    <label title="Combate y exploración en equilibrio."><input type="radio" name="difficulty" value="inka" checked /><strong>Inka</strong><span>Equilibrio</span></label>
+                    <label title="Enemigos exigentes y recursos limitados."><input type="radio" name="difficulty" value="pachacutec" /><strong>Pachacútec</strong><span>Exigente</span></label>
+                  </fieldset>
+                  <p id="difficulty-note">La modalidad se fija al comenzar. Nombres temáticos inspirados en los Andes.</p>
+                </div>
+                <nav class="menu" aria-label="Menú principal">
+                  <button type="button" class="menu-item is-current" data-action="start">
+                    <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                    Comenzar expedición
+                  </button>
+                  <button type="button" class="menu-item" data-action="fullscreen-start" data-fs-start>
+                    <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                    Jugar en pantalla completa
+                  </button>
+                  <button type="button" class="menu-item" data-action="map" data-needs-map hidden>
+                    <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                    Continuar camino
+                  </button>
+                  <button type="button" class="menu-item menu-sound" data-action="sound" aria-pressed="false">
+                    <svg class="arrow" width="14" height="18" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                    Sonido <span class="value" data-sound-label>no</span>
+                  </button>
+                </nav>
+                <div class="title-foot">
+                  <span class="keys-hint"><kbd>↑</kbd><kbd>↓</kbd> elegir <kbd>ENTER</kbd> aceptar <kbd>F</kbd> pantalla completa</span>
+                  <span>Personajes ficticios, arte y sonidos originales. v0.1</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="screen pause-screen" id="pause-screen" role="dialog" aria-modal="true" aria-labelledby="pause-heading">
+              <div class="pause-box notch-gold">
+                <div class="tocapu" aria-hidden="true"></div>
+                <div class="pause-grid">
+                  <div class="pause-menu">
+                    <h2 class="pause-heading" id="pause-heading">PAUSA</h2>
+                    <nav class="menu" aria-label="Menú de pausa">
+                      <button type="button" class="menu-item is-current" data-action="resume">
+                        <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                        Continuar
+                      </button>
+                      <button type="button" class="menu-item" data-action="restart">
+                        <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                        Reiniciar etapa
+                      </button>
+                      <button type="button" class="menu-item" data-action="map" data-needs-map hidden>
+                        <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                        Mapa del camino
+                      </button>
+                      <button type="button" class="menu-item menu-sound" data-action="sound" aria-pressed="false">
+                        <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                        Sonido <span class="value" data-sound-label>no</span>
+                      </button>
+                      <button type="button" class="menu-item menu-quiet" data-action="title">
+                        <svg class="arrow" width="12" height="16" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h2v1h2v1h2v1h1v3H6v1H4v1H2v1H0z" fill="#E9B53B"/></svg>
+                        Salir al título
+                      </button>
+                    </nav>
+                  </div>
+                  <div class="pause-info">
+                    <div class="pause-top">
+                      <div class="stack">
+                        <span class="label" id="pause-stage">ETAPA I DE V</span>
+                        <span class="pause-stage-name" id="pause-stage-name">Sacsayhuamán</span>
+                      </div>
+                      <div class="stack end">
+                        <span class="label">QUIPU</span>
+                        <span class="quipu" id="pause-quipu">0000</span>
+                      </div>
+                    </div>
+                    <h3 class="label">LO QUE LLEVAS EN LA MANTA</h3>
+                    <ul class="inventory">
+                      <li>
+                        <svg width="40" height="30" viewBox="0 0 8 6" shape-rendering="crispEdges" aria-hidden="true"><path d="M2 0h4v1h1v1h1v3H7v1H1V5H0V2h1V1h1z" fill="#9C948A"/><path d="M2 1h2v1H2zM1 2h1v1H1z" fill="#D9D2C5"/></svg>
+                        <span>Piedras</span>
+                        <span class="inv-count"><span id="pause-ammo">24</span><span class="dim">/24</span></span>
+                        <kbd>J</kbd>
+                      </li>
+                      <li>
+                        <svg width="28" height="36" viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h1v2h1v1h1v1h1v3H6v1H5v1H2V8H1V7H0V4h1V3h1V1h1z" fill="#E9732B"/><rect x="2" y="5" width="3" height="3" fill="#E9B53B"/></svg>
+                        <span>Piedras de fuego</span>
+                        <span class="inv-count" id="pause-fire">5</span>
+                        <kbd>K</kbd>
+                      </li>
+                      <li>
+                        <svg width="36" height="36" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><rect x="4" y="2" width="1" height="3" fill="#DCCFB4"/><rect x="2" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="5" y="5" width="2" height="1" fill="#DCCFB4"/><rect x="3" y="0" width="3" height="2" fill="#C9A26B"/><rect x="0" y="6" width="3" height="3" fill="#C9A26B"/><rect x="6" y="6" width="3" height="3" fill="#C9A26B"/></svg>
+                        <span>Boleadoras</span>
+                        <span class="inv-count" id="pause-bola">3</span>
+                        <kbd>L</kbd>
+                      </li>
+                      <li>
+                        <svg class="llama-ico" width="36" height="36" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v2H6zM9 2h1v1H9zM6 3h2v2H6zM1 5h7v2H1zM0 5h1v1H0zM1 7h1v3H1zM3 7h1v3H3zM5 7h1v3H5zM7 7h1v3H7z"/><rect x="7" y="1" width="1" height="1" fill="#16121A"/></svg>
+                        <span>Escupitajos de la llama</span>
+                        <span class="inv-count"><span id="pause-spit">3</span><span class="dim">/3</span></span>
+                        <kbd>H</kbd>
+                      </li>
+                    </ul>
+                    <p class="pause-hint">
+                      Acércate a tu llama y pulsa <kbd>E</kbd> para recargar piedras. Su carga baja con
+                      cada recarga (<span id="pause-loads">5 de 5</span>) y se repone en cada apacheta.
+                      Pulsa <kbd>H</kbd> y tu llama escupe al enemigo más cercano: recupera un
+                      escupitajo cada 6 segundos.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="screen result-screen" id="overlay" role="dialog" aria-modal="true" aria-labelledby="title">
+              <div class="result-box notch-gold">
+                <span class="eyebrow">QHAPAQ ÑAN · NIVEL 01</span>
+                <h2 id="title">El paso de los andenes</h2>
+                <p id="message">
+                  La huaraca, tu manta y una compañera fiel. Llega al final del camino y derrota al
+                  capitán de la expedición.
+                </p>
+                <div class="result-actions">
+                  <button type="button" class="btn-primary" id="start">Comenzar expedición →</button>
+                  <button type="button" class="btn-secondary" id="restart" hidden>Empezar de nuevo</button>
                 </div>
               </div>
             </div>
-          </section>
-
-          <div class="screen result-screen" id="overlay" role="dialog" aria-modal="true" aria-labelledby="title">
-            <div class="result-box notch-gold">
-              <span class="eyebrow">QHAPAQ ÑAN · NIVEL 01</span>
-              <h2 id="title">El paso de los andenes</h2>
-              <p id="message">
-                La huaraca, tu manta y una compañera fiel. Llega al final del camino y derrota al
-                capitán de la expedición.
-              </p>
-              <div class="result-actions">
-                <button type="button" class="btn-primary" id="start">Comenzar expedición →</button>
-                <button type="button" class="btn-secondary" id="restart" hidden>Empezar de nuevo</button>
+            <div class="map-cartouche" aria-hidden="true">
+              <span class="map-cartouche-title">QHAPAQ ÑAN</span>
+              <span class="label">CAMINO DE LA RESISTENCIA · 1536–1539</span>
+            </div>
+            <aside class="map-panel" id="map-panel" aria-labelledby="mp-heading">
+              <div class="mp-head">
+                <h2 class="label" id="mp-heading">LAS CINCO CUERDAS</h2>
+                <p>Cada etapa es una cuerda del quipu.</p>
               </div>
+              <ol class="mp-list" id="mp-list"></ol>
+              <div class="mp-text">
+                <h3 class="label gold">HISTORIA</h3>
+                <p id="mp-history"></p>
+                <h3 class="label fiction">FICCIÓN</h3>
+                <p id="mp-fiction" class="muted"></p>
+              </div>
+              <button type="button" class="mp-play" id="mp-play" data-action="play">
+                <kbd>ENTER</kbd><span id="mp-play-label">Jugar etapa I</span>
+              </button>
+              <p class="mp-hint"><kbd>↑</kbd><kbd>↓</kbd> elegir etapa · clic o toque</p>
+              <p class="mp-notice" id="mp-notice" role="status" aria-live="polite"></p>
+            </aside>
+
+            <!-- Controles en pantalla: barra bajo el juego (ratón) o superpuestos (táctil) -->
+            <div class="controls" id="controls" role="group" aria-label="Controles en pantalla">
+              <button type="button" tabindex="-1" class="cbtn cbtn-move" data-key="ArrowLeft" aria-label="Caminar a la izquierda (A)" title="Caminar a la izquierda (A)"><svg viewBox="0 0 4 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h1v1H3zM2 1h2v1H2zM1 2h3v1H1zM0 3h4v1H0zM1 4h3v1H1zM2 5h2v1H2zM3 6h1v1H3z"/></svg></button>
+              <button type="button" tabindex="-1" class="cbtn cbtn-move" data-key="ArrowRight" aria-label="Caminar a la derecha (D)" title="Caminar a la derecha (D)"><svg viewBox="0 0 4 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h1v1H0zM0 1h2v1H0zM0 2h3v1H0zM0 3h4v1H0zM0 4h3v1H0zM0 5h2v1H0zM0 6h1v1H0z"/></svg></button>
+              <button type="button" tabindex="-1" class="cbtn" data-key="Space" aria-label="Saltar (Espacio)" title="Saltar (Espacio)"><span class="cico cico-jump"><svg viewBox="0 0 9 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M5 0h2v1H5zM5 1h2v1H5zM3 2h4v1H3zM2 3h1v1H2zM4 3h2v1H4zM7 3h1v1H7zM4 4h2v1H4zM4 5h1v1H4zM6 5h1v1H6zM3 6h1v1H3zM7 6h1v1H7zM2 7h1v1H2z"/></svg></span><span class="clabel">Saltar</span></button>
+              <button type="button" tabindex="-1" class="cbtn cbtn-weapon is-selected" data-key="KeyJ" data-weapon="J" aria-pressed="true" aria-label="Huaraca (J)" title="Huaraca (J)"><span class="cico"><svg viewBox="0 0 13 10" shape-rendering="crispEdges" aria-hidden="true"><path fill="#c9a26b" d="M1 0h2v1H1zM0 1h1v1H0zM3 1h1v1H3zM0 2h1v1H0zM3 2h1v1H3zM1 3h2v1H1zM4 3h1v1H4zM5 4h1v1H5zM6 5h1v1H6zM7 6h1v1H7zM8 7h1v1H8z"/><path fill="#2a2228" d="M9 6h2v1H9zM9 7h1v1H9zM12 7h1v1H12zM9 8h1v1H9zM12 8h1v1H12zM10 9h2v1H10z"/><path fill="#e4ddd0" d="M10 7h2v1H10z"/><path fill="#a39b90" d="M10 8h2v1H10z"/></svg></span><span class="clabel">Huaraca</span></button>
+              <button type="button" tabindex="-1" class="cbtn cbtn-weapon" data-key="KeyK" data-weapon="K" aria-pressed="false" aria-label="Fuego (K)" title="Fuego (K)"><span class="cico"><svg viewBox="0 0 7 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#e9732b" d="M3 0h1v1H3zM3 1h2v1H3zM2 2h1v1H2zM4 2h1v1H4zM1 3h2v1H1zM4 3h2v1H4zM1 4h1v1H1zM5 4h1v1H5zM0 5h1v1H0zM6 5h1v1H6zM0 6h1v1H0zM6 6h1v1H6zM1 7h1v1H1zM5 7h1v1H5zM2 8h3v1H2z"/><path fill="#e9b53b" d="M3 2h1v1H3zM3 3h1v1H3zM2 4h3v1H2zM1 5h2v1H1zM4 5h2v1H4zM1 6h2v1H1zM5 6h1v1H5zM2 7h3v1H2z"/><path fill="#fff1c0" d="M3 5h1v1H3zM3 6h2v1H3z"/></svg></span><span class="clabel">Fuego</span><span class="cbadge" id="ctl-fire" aria-hidden="true">5</span></button>
+              <button type="button" tabindex="-1" class="cbtn cbtn-weapon" data-key="KeyL" data-weapon="L" aria-pressed="false" aria-label="Boleadora (L)" title="Boleadora (L)"><span class="cico"><svg viewBox="0 0 11 11" shape-rendering="crispEdges" aria-hidden="true"><path fill="#2a2228" d="M4 0h2v1H4zM3 1h1v1H3zM6 1h1v1H6zM3 2h1v1H3zM6 2h1v1H6zM1 7h2v1H1zM7 7h2v1H7zM0 8h1v1H0zM3 8h1v1H3zM6 8h1v1H6zM9 8h1v1H9zM0 9h1v1H0zM3 9h1v1H3zM6 9h1v1H6zM9 9h1v1H9zM1 10h2v1H1zM7 10h2v1H7z"/><path fill="#e4ddd0" d="M4 1h1v1H4zM1 8h1v1H1zM7 8h1v1H7z"/><path fill="#a39b90" d="M5 1h1v1H5zM4 2h2v1H4zM2 8h1v1H2zM8 8h1v1H8zM1 9h2v1H1zM7 9h2v1H7z"/><path fill="#c9a26b" d="M4 3h2v1H4zM4 4h2v1H4zM3 5h1v1H3zM6 5h1v1H6zM2 6h1v1H2zM7 6h1v1H7zM3 7h1v1H3zM6 7h1v1H6z"/></svg></span><span class="clabel">Bola</span><span class="cbadge" id="ctl-bola" aria-hidden="true">3</span></button>
+              <button type="button" tabindex="-1" class="cbtn touch-spit" data-key="KeyH" id="touch-spit" aria-label="Escupitajo de la llama (H)" title="Escupitajo de la llama (H)"><span class="cico llama-ico"><svg viewBox="0 0 10 11" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v1H6zM6 2h1v1H6zM8 2h2v1H8zM6 3h3v1H6zM6 4h2v1H6zM6 5h2v1H6zM1 6h7v1H1zM0 7h8v1H0zM1 8h7v1H1zM1 9h1v1H1zM3 9h1v1H3zM6 9h1v1H6zM8 9h1v1H8zM1 10h1v1H1zM3 10h1v1H3zM6 10h1v1H6zM8 10h1v1H8z"/><path fill="#16121a" d="M7 2h1v1H7z"/></svg></span><span class="clabel">Llama</span><span class="cbadge cbadge-green touch-count" id="touch-spit-count" aria-hidden="true">3</span></button>
+              <button type="button" tabindex="-1" class="cbtn cbtn-reload" data-key="KeyE" aria-label="Recargar (E)" title="Recargar (E)"><span class="cico"><svg viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h4v1H3zM2 1h1v1H2zM7 1h1v1H7zM1 2h1v1H1zM8 2h2v1H8zM1 3h1v1H1zM7 3h3v1H7zM1 4h1v1H1zM8 5h1v1H8zM0 6h3v1H0zM8 6h1v1H8zM0 7h2v1H0zM8 7h1v1H8zM2 8h1v1H2zM7 8h1v1H7zM3 9h4v1H3z"/></svg></span><span class="clabel">Recargar</span></button>
+              <button type="button" tabindex="-1" class="cbtn cbtn-pause touch-pause" data-action="pause" aria-label="Pausa (P)" title="Pausa (P)"><span class="cico"><svg viewBox="0 0 6 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h2v1H0zM4 0h2v1H4zM0 1h2v1H0zM4 1h2v1H4zM0 2h2v1H0zM4 2h2v1H4zM0 3h2v1H0zM4 3h2v1H4zM0 4h2v1H0zM4 4h2v1H4zM0 5h2v1H0zM4 5h2v1H4zM0 6h2v1H0zM4 6h2v1H4z"/></svg></span><span class="clabel">Pausa</span></button>
             </div>
           </div>
 
-          <div class="map-cartouche" aria-hidden="true">
-            <span class="map-cartouche-title">QHAPAQ ÑAN</span>
-            <span class="label">CAMINO DE LA RESISTENCIA · 1536</span>
+          <!-- Mandos táctiles: cruceta (multitáctil, deslizar el pulgar) y disparo -->
+          <div class="pad" id="pad">
+            <div class="dpad" data-pad role="group" aria-label="Cruceta: caminar y saltar">
+              <span class="dp dp-up" aria-hidden="true"><svg viewBox="0 0 7 4" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h1v1H3zM2 1h3v1H2zM1 2h5v1H1zM0 3h7v1H0z"/></svg></span>
+              <span class="dp dp-left" aria-hidden="true"><svg viewBox="0 0 4 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h1v1H3zM2 1h2v1H2zM1 2h3v1H1zM0 3h4v1H0zM1 4h3v1H1zM2 5h2v1H2zM3 6h1v1H3z"/></svg></span>
+              <span class="dp dp-right" aria-hidden="true"><svg viewBox="0 0 4 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h1v1H0zM0 1h2v1H0zM0 2h3v1H0zM0 3h4v1H0zM0 4h3v1H0zM0 5h2v1H0zM0 6h1v1H0z"/></svg></span>
+              <span class="dp dp-down" aria-hidden="true"><svg viewBox="0 0 7 4" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h7v1H0zM1 1h5v1H1zM2 2h3v1H2zM3 3h1v1H3z"/></svg></span>
+            </div>
+            <button type="button" tabindex="-1" class="fire-btn" data-fire aria-label="Disparar el arma elegida"><svg viewBox="0 0 12 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f2e6cc" d="M9 0h1v1H9zM11 0h1v1H11zM8 1h1v1H8zM10 1h1v1H10zM7 2h1v1H7zM9 2h1v1H9z"/><path fill="#2a2228" d="M2 2h4v1H2zM1 3h1v1H1zM6 3h1v1H6zM0 4h1v1H0zM7 4h1v1H7zM0 5h1v1H0zM7 5h1v1H7zM0 6h1v1H0zM7 6h1v1H7zM1 7h1v1H1zM7 7h1v1H7zM2 8h5v1H2z"/><path fill="#e4ddd0" d="M2 3h2v1H2zM1 4h2v1H1zM1 5h1v1H1z"/><path fill="#a39b90" d="M4 3h2v1H4zM3 4h4v1H3zM2 5h5v1H2zM1 6h5v1H1zM2 7h3v1H2z"/><path fill="#6f6558" d="M6 6h1v1H6zM5 7h2v1H5z"/></svg></button>
           </div>
-          <aside class="map-panel" id="map-panel" aria-labelledby="mp-heading">
-            <div class="mp-head">
-              <h2 class="label" id="mp-heading">LAS CINCO CUERDAS</h2>
-              <p>Cada etapa es una cuerda del quipu.</p>
-            </div>
-            <ol class="mp-list" id="mp-list"></ol>
-            <div class="mp-text">
-              <h3 class="label gold">HISTORIA</h3>
-              <p id="mp-history"></p>
-              <h3 class="label fiction">FICCIÓN</h3>
-              <p id="mp-fiction" class="muted"></p>
-            </div>
-            <button type="button" class="mp-play" id="mp-play" data-action="play">
-              <kbd>ENTER</kbd><span id="mp-play-label">Jugar etapa I</span>
-            </button>
-            <p class="mp-hint"><kbd>↑</kbd><kbd>↓</kbd> elegir etapa · clic o toque</p>
-            <p class="mp-notice" id="mp-notice" role="status" aria-live="polite"></p>
-          </aside>
         </div>
 
-        <div class="touch" aria-label="Controles táctiles" role="group">
-          <button type="button" tabindex="-1" data-key="ArrowLeft" aria-label="Caminar a la izquierda">◀</button
-          ><button type="button" tabindex="-1" data-key="ArrowRight" aria-label="Caminar a la derecha">▶</button
-          ><button type="button" tabindex="-1" data-key="Space">Saltar</button
-          ><button type="button" tabindex="-1" data-key="KeyJ">Huaraca</button
-          ><button type="button" tabindex="-1" data-key="KeyK">Fuego</button
-          ><button type="button" tabindex="-1" data-key="KeyL">Bola</button
-          ><button type="button" tabindex="-1" data-key="KeyH" class="touch-spit" id="touch-spit" aria-label="Escupitajo de la llama"
-            ><svg class="llama-ico" width="24" height="24" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true"><path d="M6 0h1v1H6zM8 0h1v1H8zM6 1h3v2H6zM9 2h1v1H9zM6 3h2v2H6zM1 5h7v2H1zM0 5h1v1H0zM1 7h1v3H1zM3 7h1v3H3zM5 7h1v3H5zM7 7h1v3H7z"/><rect x="7" y="1" width="1" height="1" fill="#16121A"/></svg
-            ><span>Llama</span><span class="touch-count" id="touch-spit-count" aria-hidden="true">3</span></button
-          ><button type="button" tabindex="-1" data-key="KeyE">Recargar</button
-          ><button type="button" tabindex="-1" data-action="pause" class="touch-pause">Pausa</button>
-        </div>
-
-        <div class="route" id="route" role="group" aria-label="Ruta del Qhapaq Ñan">
-          <div class="route-line" aria-hidden="true"></div>
-          <div class="route-fill" id="route-fill" aria-hidden="true"></div>
-          <div class="route-marker" id="route-marker" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 10 10" shape-rendering="crispEdges"><path d="M4 0h2v2h2v2h2v2H8v2H6v2H4V8H2V6H0V4h2V2h2z" fill="#E9B53B"/><rect x="4" y="4" width="2" height="2" fill="#16121A"/></svg>
+        <footer class="strip" id="strip">
+          <a class="strip-logo" href="./" aria-label="CHANKAS, camino de resistencia: volver al inicio">
+            <span class="logo-mountains"><svg viewBox="0 0 24 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="#e9b53b" d="M10 0h2v1H10zM9 1h1v1H9zM12 1h1v1H12zM4 2h2v1H4zM8 2h1v1H8zM13 2h1v1H13zM18 2h2v1H18zM3 3h1v1H3zM6 3h5v1H6zM13 3h2v1H13zM17 3h1v1H17zM20 3h1v1H20zM2 4h5v1H2zM8 4h14v1H8zM1 5h2v1H1zM10 5h3v1H10zM21 5h2v1H21zM0 6h1v1H0zM23 6h1v1H23z"/><path fill="#f2e6cc" d="M10 1h2v1H10zM9 2h4v1H9zM4 3h2v1H4zM11 3h2v1H11zM18 3h2v1H18z"/><path fill="#a8301f" d="M7 4h1v1H7zM3 5h7v1H3zM13 5h8v1H13zM1 6h22v1H1z"/></svg></span>
+            <span class="logo-name">CHANKAS</span>
+            <span class="logo-sub">CAMINO DE RESISTENCIA</span>
+          </a>
+          <div class="route" id="route" role="group" aria-label="Ruta de la resistencia">
+            <div class="route-line" aria-hidden="true"></div>
+            <div class="route-fill" id="route-fill" aria-hidden="true"></div>
+            <div class="route-marker" id="route-marker" aria-hidden="true"></div>
+            <ol class="route-stages" id="route-stages"></ol>
+            <p class="sr-only" id="route-sr"></p>
           </div>
-          <span class="route-pct" id="route-pct" aria-hidden="true">0%</span>
-          <ol class="route-stages" id="route-stages"></ol>
-          <p class="sr-only" id="route-sr"></p>
+          <div class="strip-panel">
+            <p class="strip-tag">LA RESISTENCIA COMIENZA EN LOS ANDES</p>
+            <span class="strip-orn"><svg viewBox="0 0 25 5" shape-rendering="crispEdges" aria-hidden="true"><path fill="#e9b53b" d="M4 0h1v1H4zM12 0h1v1H12zM20 0h1v1H20zM3 1h1v1H3zM5 1h1v1H5zM11 1h1v1H11zM13 1h1v1H13zM19 1h1v1H19zM21 1h1v1H21zM0 2h11v1H0zM12 2h1v1H12zM14 2h11v1H14zM3 3h1v1H3zM5 3h1v1H5zM11 3h1v1H11zM13 3h1v1H13zM19 3h1v1H19zM21 3h1v1H21zM4 4h1v1H4zM12 4h1v1H12zM20 4h1v1H20z"/></svg></span>
+            <p class="strip-url">chankas.maxflow.ink</p>
+          </div>
+        </footer>
+
+        <div class="rotate-screen" id="rotate-screen" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="rotate-title" aria-describedby="rotate-text">
+          <svg class="rotate-ico" width="96" height="96" viewBox="0 0 24 24" shape-rendering="crispEdges" aria-hidden="true"><path fill="#E9B53B" d="M7 3h6v1h1v14h-1v1H7v-1H6V4h1zM7 5v11h6V5z"/><path fill="#F2E6CC" d="M9 17h2v1H9z"/><path fill="#E9B53B" d="M16 4h3v1h1v1h1v3h1l-2 2-2-2h1V6h-1V5h-2z"/></svg>
+          <h2 id="rotate-title">Gira tu teléfono</h2>
+          <p id="rotate-text">CHANKAS se juega en horizontal. La expedición está en pausa y continúa al girar.</p>
+        </div>
+        <p class="fs-hint" id="fs-hint" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="competition" aria-label="Progreso y competencia">
+        <div class="traveler-card">
+          <span class="eyebrow">TU CAMINO</span>
+          <h2 id="player-rank">Caminante</h2>
+          <p id="player-xp">0 XP</p>
+          <form id="alias-form"><label for="player-alias">Alias público</label><div class="alias-row"><input id="player-alias" maxlength="24" minlength="3" required autocomplete="nickname"><button type="submit" class="btn-secondary">Guardar</button></div></form>
+          <p id="profile-status" role="status">Conectando con el quipu…</p>
+          <h3>Insignias</h3>
+          <ul id="player-badges" class="badge-list"></ul>
+          <p id="competition-result" role="status" aria-live="polite"></p>
+        </div>
+        <div class="leaderboard-card">
+          <span class="eyebrow">SACSAYHUAMÁN · MEJOR PARTIDA</span>
+          <h2>Quipu de campeones</h2>
+          <div class="ranking-filters"><label>Modalidad<select id="ranking-difficulty"><option value="chasqui">Chasqui</option><option value="inka" selected>Inka</option><option value="pachacutec">Pachacútec</option></select></label><label>Competencia<select id="ranking-period"><option value="weekly">Esta semana</option><option value="all">General</option></select></label><button id="ranking-refresh" type="button" class="btn-secondary">Actualizar</button></div>
+          <p>Medallas semanales: oro, plata y bronce para los tres primeros. Desempate por menos muertes y menor tiempo activo.</p>
+          <div class="ranking-table"><table><caption class="sr-only">Clasificación de jugadores</caption><thead><tr><th scope="col">Posición</th><th scope="col">Jugador</th><th scope="col">Rango</th><th scope="col">Insignias</th><th scope="col">Quipu</th><th scope="col">Tiempo</th></tr></thead><tbody id="ranking-entries"></tbody></table></div>
+          <p id="ranking-personal"></p><p id="ranking-status" role="status" aria-live="polite"></p>
         </div>
       </section>
 
-      <section class="controls" aria-label="Controles">
+      <section class="keys-legend" aria-label="Teclado">
+        <button type="button" class="btn notch legend-sound" id="sound" aria-pressed="false">
+              <svg viewBox="0 0 8 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h1v1H3zM2 1h2v1H2zM0 2h4v1H0zM5 2h1v1H5zM0 3h4v1H0zM6 3h1v1H6zM0 4h4v1H0zM5 4h1v1H5zM2 5h2v1H2zM3 6h1v1H3z"/></svg><span>Sonido: <span data-sound-label>no</span></span>
+            </button>
         <span class="ctl"><kbd>A</kbd><kbd>D</kbd><span>caminar</span></span>
         <span class="ctl"><kbd>ESPACIO</kbd><span>saltar</span></span>
         <span class="ctl"><kbd>J</kbd><span>huaraca</span></span>
@@ -283,6 +331,7 @@
         <span class="ctl"><kbd>H</kbd><span>escupitajo de la llama</span></span>
         <span class="ctl"><kbd>E</kbd><span>recargar</span></span>
         <span class="ctl"><kbd>P</kbd><span>pausa</span></span>
+        <span class="ctl"><kbd>F</kbd><span>pantalla completa</span></span>
         <span class="ctl"><kbd>ENTER</kbd><span>jugar etapa</span></span>
         <span class="ctl ctl-alt">También: flechas para caminar y elegir, <kbd>↑</kbd> o <kbd>W</kbd> saltar, <kbd>ESC</kbd> pausa.</span>
       </section>
@@ -297,6 +346,7 @@
     <script src="art/peru-data.js"></script>
     <script src="art/map.js"></script>
     <script src="ui.js"></script>
+    <script src="competition.js"></script>
     <script src="game.js"></script>
   </body>
 </html>

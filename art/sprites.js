@@ -30,9 +30,9 @@
   var HEX = {
     k: '#1b1210', // contorno
     n: '#251b18', // cabello / barba
-    s: '#c88a5a', S: '#8e5836', h: '#e6ad7c', // piel
+    s: '#bd7946', S: '#87502c', h: '#da9a63', // piel bronce
     C: '#dfae88', K: '#a5714f', X: '#f1cda6', // piel europea (españoles): distingue del héroe
-    r: '#b4283a', R: '#731a2a', q: '#e2554a', // rojo cochinilla
+    r: '#bf3127', R: '#7b1c1e', q: '#e45a3a', // rojo cochinilla
     o: '#dda23c', O: '#9a6420', // ocre
     t: '#2db3a3', T: '#1b766f', // turquesa
     g: '#f6d24c', G: '#b48b1d', // oro
@@ -47,8 +47,11 @@
     f: '#ffc93c', F: '#ff7b1c', i: '#fff5b8', I: '#d13c16', // fuego
     p: '#c3eaa8', P: '#79b46b', // saliva
     a: '#bab5a3', A: '#7b7669', c: '#e5e1ce', // piedra
-    H: '#ffd5a1', V: '#ead8b5', Z: '#d9ad70', // luz cálida: piel, lana, alano
-    j: '#e3579b', J: '#7b3f9f' // pompones
+    H: '#f1bd86', V: '#ead8b5', Z: '#d9ad70', // luz cálida: piel, lana, alano
+    j: '#e3579b', J: '#7b3f9f', // pompones
+    '7': '#40312e', // brillo del cabello
+    '8': '#f07a2a', // pluma naranja
+    '9': '#5e331d'  // sombra profunda de la piel
   };
   var RGBA_SOFT = { l: [255, 244, 214, 150], L: [150, 142, 136, 140], Q: [255, 255, 255, 120] };
   // Colores que no generan contorno (brillos, humo, fuego).
@@ -195,6 +198,92 @@
     return this.shift(cx == null ? 0 : Math.round(cx - (b.x0 + b.x1) / 2), row - b.y1);
   };
 
+  /*
+   * Rejilla de alta resolución (×2). Acepta las mismas coordenadas "de arte" que Grid
+   * (las poses y esqueletos no cambian), pero las líneas y elipses se rasterizan con el
+   * doble de detalle; hset/hline/hblit/hrect trabajan directamente en píxeles finos para
+   * rostros, tocapus, cascos y adornos. Tras finishHi() es una Grid normal de w*2 × h*2.
+   */
+  function HGrid(w, h, oy) { Grid.call(this, w * 2, h * 2, (oy || 0) * 2); }
+  var HP = HGrid.prototype = Object.create(GP);
+  HP.constructor = HGrid;
+  HP.hset = GP.set;
+  HP.set = function (x, y, c) {
+    var X = Math.round(x) * 2, Y = Math.round(y) * 2;
+    this.hset(X, Y, c); this.hset(X + 1, Y, c); this.hset(X, Y + 1, c); this.hset(X + 1, Y + 1, c);
+  };
+  HP.line = function (x0, y0, x1, y1, c, b) {
+    b = b || 1;
+    var o = b === 3 ? -2 : 0, s = 2 * b;
+    var X0 = Math.round(x0 * 2), Y0 = Math.round(y0 * 2), X1 = Math.round(x1 * 2), Y1 = Math.round(y1 * 2);
+    var dx = Math.abs(X1 - X0), sx = X0 < X1 ? 1 : -1, dy = -Math.abs(Y1 - Y0), sy = Y0 < Y1 ? 1 : -1, err = dx + dy;
+    for (var n = 0; n < 1000; n++) {
+      for (var j = 0; j < s; j++) for (var i = 0; i < s; i++) this.hset(X0 + i + o, Y0 + j + o, c);
+      if (X0 === X1 && Y0 === Y1) break;
+      var e2 = 2 * err;
+      if (e2 >= dy) { err += dy; X0 += sx; }
+      if (e2 <= dx) { err += dx; Y0 += sy; }
+    }
+  };
+  HP.ellipse = function (cx, cy, rx, ry, c) {
+    if (rx <= 0 || ry <= 0) return;
+    for (var Y = Math.floor((cy - ry) * 2) - 1; Y <= Math.ceil((cy + ry) * 2) + 1; Y++) {
+      for (var X = Math.floor((cx - rx) * 2) - 1; X <= Math.ceil((cx + rx) * 2) + 1; X++) {
+        var u = (X / 2 - 0.25 - cx) / rx, v = (Y / 2 - 0.25 - cy) / ry;
+        if (u * u + v * v <= 1) this.hset(X, Y, typeof c === 'function' ? c(Math.floor(X / 2), Math.floor(Y / 2), X, Y) : c);
+      }
+    }
+  };
+  HP.hline = function (x0, y0, x1, y1, c) {
+    x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+    var dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1, err = dx + dy;
+    for (var n = 0; n < 1000; n++) {
+      this.hset(x0, y0, c);
+      if (x0 === x1 && y0 === y1) break;
+      var e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  };
+  HP.hrect = function (x, y, w, h, c) { for (var j = 0; j < h; j++) for (var i = 0; i < w; i++) this.hset(x + i, y + j, c); };
+  HP.hblit = function (rows, x, y) {
+    x = Math.round(x); y = Math.round(y);
+    for (var j = 0; j < rows.length; j++) for (var i = 0; i < rows[j].length; i++) this.hset(x + i, y + j, rows[j].charAt(i));
+  };
+  // Dibuja una pieza aparte y la pega con su propio contorno (brazo delantero sobre el torso).
+  HP.stamp = function (fn, oc) {
+    var t = new HGrid(1, 1); t.w = this.w; t.h = this.h; t.oy = this.oy; t.d = new Array(this.w * this.h);
+    for (var i = 0; i < t.d.length; i++) t.d[i] = '.';
+    fn(t);
+    t.outline(oc || 'k');
+    for (i = 0; i < t.d.length; i++) if (t.d[i] !== '.' && (t.d[i] !== (oc || 'k') || this.d[i] !== '.')) this.d[i] = t.d[i];
+    return this;
+  };
+  // Luz arriba-izquierda, sombra abajo-derecha, contorno y sel-out (solo al prerenderizar).
+  var LITH = { s: 'h', h: 'H', S: 's', C: 'X', K: 'C', r: 'q', R: 'r', o: 'g', O: 'o', b: 'u', B: 'b', w: 'V', W: 'w', v: 'W',
+    y: 'Z', Y: 'y', M: 'm', m: 'x', N: 'M', d: 'N', D: 'd', a: 'c', A: 'a', e: 'r', E: 'e', n: '7', U: 'u', T: 't' };
+  var DKH = { s: 'S', h: 's', H: 'h', S: '9', r: 'R', q: 'r', o: 'O', g: 'G', w: 'W', V: 'w', W: 'v', m: 'M', M: 'N', N: 'D',
+    d: 'D', b: 'B', y: 'Y', Z: 'y', C: 'K', X: 'C', a: 'A', c: 'a', t: 'T', e: 'E', u: 'U', j: 'J', x: 'm', '7': 'n' };
+  GP.finishHi = function () {
+    var src = this.d.slice(), w = this.w, h = this.h, x, y;
+    function e(xx, yy) { return xx < 0 || yy < 0 || xx >= w || yy >= h || src[yy * w + xx] === '.'; }
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+      var c = src[y * w + x];
+      if (c === '.' || SOFT[c]) continue;
+      if ((e(x, y - 1) || e(x - 1, y)) && LITH[c]) this.d[y * w + x] = LITH[c];
+      else if ((e(x, y + 1) || e(x + 1, y)) && DKH[c]) this.d[y * w + x] = DKH[c];
+    }
+    this.outline();
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
+      var at = y * w + x;
+      if (this.d[at] !== 'k' || src[at] !== '.') continue;
+      c = src[at + w];
+      if (src[at - w] === '.' && (c === 'm' || c === 'M' || c === 'w' || c === 'V' || c === 'x'))
+        this.d[at] = c === 'w' || c === 'V' ? 'v' : 'N';
+    }
+    return this;
+  };
+
   /* ------------------------------------------------------------------ */
   /* Utilidades de pose                                                  */
   /* ------------------------------------------------------------------ */
@@ -307,8 +396,9 @@
   // Contorno exterior (1 px de arte, w+2 × h+2) del color pedido: los píxeles vacíos que
   // tocan la silueta (incluidas diagonales). Se construye una vez y se guarda en el fotograma.
   var rimBuilt = 0;
-  function rimCanvas(g, color) {
-    var w = g.w + 2, h = g.h + 2, cv = makeCanvas(w, h);
+  function rimCanvas(g, color, th) {
+    th = th || 1;
+    var w = g.w + 2 * th, h = g.h + 2 * th, cv = makeCanvas(w, h);
     if (!cv) return null;
     var cx = cv.getContext('2d'), im = cx.createImageData(w, h), a = im.data;
     var r = parseInt(color.substr(1, 2), 16), gg = parseInt(color.substr(3, 2), 16), b = parseInt(color.substr(5, 2), 16);
@@ -318,10 +408,13 @@
       return v !== '.' && !SOFT[v];
     }
     for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
-      var sx = x - 1, sy = y - 1;
+      var sx = x - th, sy = y - th, hit = false;
       if (solid(sx, sy)) continue;
-      if (solid(sx - 1, sy) || solid(sx + 1, sy) || solid(sx, sy - 1) || solid(sx, sy + 1) ||
-          solid(sx - 1, sy - 1) || solid(sx + 1, sy - 1) || solid(sx - 1, sy + 1) || solid(sx + 1, sy + 1)) {
+      for (var j = -th; j <= th && !hit; j++) for (var i = -th; i <= th; i++) {
+        if ((i === -th || i === th) && (j === -th || j === th) && th > 1) continue;
+        if (solid(sx + i, sy + j)) { hit = true; break; }
+      }
+      if (hit) {
         var k = (y * w + x) * 4;
         a[k] = r; a[k + 1] = gg; a[k + 2] = b; a[k + 3] = 235;
       }
@@ -334,103 +427,132 @@
   /* ------------------------------------------------------------------ */
   /* HÉROE — guerrero inca                                              */
   /* ------------------------------------------------------------------ */
+  // Perfil compacto: una mirada clara, mandíbula definida y llauto tejido.
+  // La cara usa masas de color, no dientes ni píxeles blancos que parezcan una mueca.
   var HEAD_HERO = [
-    '..nnnnn.',
-    '.nnnnnnn',
-    'rorrorro', // llauto trenzado
-    'nnnhhsss',
-    'nnggssks', // orejera de oro + ojo
-    'nnGGssSs',
-    '.nnssSs.',
-    '..nSSs..'
+    '....nnnnnn....',
+    '..nnn77nnnnn..',
+    '.nnn77nnnnnnn.',
+    '.nnnnnnnnnnnn.',
+    '.rrrrrrrrrrrr.',
+    '.RRgRRRRgRRRR.',
+    '.nnnnnhhhhhs..',
+    '.nnnnshhhhhh..',
+    '.nnngshhhkhhs.',
+    '.nnnGshhhhhhs.',
+    '.nnnnSshhhhhs.',
+    '..nnnSshhhss..',
+    '..nnnSSssss...',
+    '...nn.Ssss....',
+    '......Sss.....',
+    '......SS......'
   ];
   var TOC = [['o', 't', 'g', 'r', 'o'], ['t', 'r', 'o', 'g', 't'], ['g', 'o', 't', 'o', 'g']];
   var DARK = { o: 'O', t: 'T', g: 'G', r: 'R' };
+  var TOCH = ['g', 't', 'w', 'q', 'o', 'T'];
 
+  // Unku de caída recta: cuello, faja y una banda tejida; los pliegues siguen
+  // el volumen del torso y dejan leer las piernas en vez de formar una falda rígida.
   function unku(g, x, y, ln) {
-    var rows = 13, W = 10;
-    for (var r = 0; r < rows; r++) {
-      var sx = x + Math.round(ln * (rows - 1 - r) / (rows - 1));
-      for (var i = 0; i < W; i++) {
-        var c;
-        if (r === 0 && (i < 1 || i > 8)) continue;
-        if (r <= 3) c = i < 2 ? 'q' : (i >= W - 2 ? 'R' : 'r');
-        else if (r === 4 || r === 11) c = i === W - 1 ? 'G' : 'g';
-        else if (r <= 10) {
-          var col = TOC[Math.floor((r - 5) / 2)][Math.floor(i / 2)];
-          c = (r - 5) % 2 === 0 ? col : DARK[col];
-          if (i % 2 === 0 && (r === 6 || r === 10)) c = 'w';
-        } else c = i === W - 1 ? 'R' : 'r';
-        g.set(sx + i, y + r, c);
+    var X = x * 2, Y = y * 2, R = 26;
+    for (var r = 0; r < R; r++) {
+      var flare = r > 19 ? 1 : 0, ww = 20 + flare;
+      var sx = X + Math.round(ln * 2 * (R - 1 - r) / (R - 1));
+      for (var i = 0; i < ww; i++) {
+        if (r === 0 && (i < 3 || i > ww - 4)) continue;
+        if (r === 1 && (i < 1 || i > ww - 2)) continue;
+        var c = i < 3 ? 'r' : i > ww - 5 ? 'E' : 'e';
+        if (r < 4 && Math.abs(i - 10) <= 3 - r) c = r < 2 ? 'S' : 'W';
+        // Cuello en V de lana crema y un pequeño pendiente central.
+        if (r >= 2 && r <= 8 && Math.abs(i - 10) === 8 - r) c = 'W';
+        if ((r === 8 || r === 9) && (i === 9 || i === 10)) c = 'g';
+        if (r === 14 || r === 17) c = 'B';
+        if (r === 15 || r === 16) {
+          c = 'O';
+          if (i >= 3 && i <= ww - 4) c = (i + r) % 6 < 2 ? 'w' : 'R';
+        }
+        if (r > 18 && (i === 5 || i === 14)) c = 'E';
+        if (r >= R - 4) {
+          var triangle = Math.abs((i % 6) - 3);
+          c = triangle <= r - (R - 4) ? 'W' : 'e';
+        }
+        g.hset(sx + i, Y + r, c);
       }
     }
-    g.set(x + ln + 5, y, 'S'); g.set(x + ln + 6, y, 'S'); // cuello
   }
-  // Manta/q'epi a la espalda: 0 vacía (doblada) … 3 repleta de piedras.
+  // Manta compacta: se reconoce la reserva sin tapar el torso con un bulto blanco.
   function bag(g, lvl, x, y) {
     if (lvl <= 0) {
-      for (var j = 0; j < 9; j++) for (var i = 0; i < 3; i++) g.set(x - 3 + i, y + 2 + j, j % 3 === 0 ? 'b' : (i === 0 ? 'W' : 'w'));
+      g.rect(x - 2, y + 3, 2, 7, 'W');
+      g.line(x - 2, y + 3, x - 2, y + 9, 'R');
       return;
     }
-    var rx = [0, 2.4, 3, 3.6][lvl], ry = [0, 3.8, 4.4, 5][lvl];
-    var cx = x - rx + 1.5, cy = y + 7 - (lvl - 1) * 0.5;
-    g.ellipse(cx, cy, rx, ry, function (px, py) {
-      if ((py - y) % 4 === 0) return 'b';
-      if ((py - y) % 4 === 2 && px % 2 === 0) return 't';
-      return px < cx - rx * 0.35 ? 'W' : 'w';
+    var rx = [0, 1.5, 1.8, 2.1][lvl], ry = [0, 3, 3.3, 3.6][lvl];
+    var cx = x - rx + 1, cy = y + 7;
+    g.ellipse(cx, cy, rx, ry, function (px, py, X, Y) {
+      if (Y === Math.round((cy - 1) * 2) || Y === Math.round((cy + 2) * 2)) return 'R';
+      if (Y === Math.round(cy * 2)) return 'O';
+      return px < cx ? 'b' : 'v';
     });
-    var top = Math.round(cy - ry);
-    if (lvl >= 2) { g.rect(cx - 2, top - 1, 2, 2, 'a'); g.set(cx - 2, top - 1, 'c'); }
-    if (lvl >= 3) { g.rect(cx, top - 2, 2, 2, 'a'); g.set(cx, top - 2, 'c'); g.set(cx - 4, top + 1, 'A'); g.set(cx - 3, top, 'a'); }
+    if (lvl >= 2) g.hrect(Math.round(cx * 2) - 1, Math.round((cy - ry) * 2), 3, 2, 'a');
+    g.hline(Math.round(cx * 2), Math.round((cy - ry) * 2) + 2, Math.round(cx * 2) + 3, Math.round((cy - ry) * 2) + 3, 'b');
   }
   function heroLeg(g, hx, hy, f, c, sc) {
     var r = limb(g, hx, hy, f[0], f[1], 5, 5, 1, c, c, 2);
-    var fx = Math.round(r[2]), fy = Math.round(r[3]);
-    g.rect(fx, fy + 1, 3, 1, sc); // ojota
-    g.set(fx + 1, fy, sc);        // tira
+    var fx = Math.round(r[2] * 2), fy = Math.round(r[3] * 2);
+    // Ojota con planta y tira: menos adornos para que el tobillo no parezca una bota.
+    g.hrect(fx - 1, fy + 1, 7, 2, sc);
+    g.hline(fx, fy - 1, fx + 3, fy + 1, 'b');
+    g.hset(fx + 4, fy, c);
   }
   function slingHang(dx, dy) {
     return function (g, hx, hy) {
-      var ex = hx + 1 + dx, ey = hy + 1 + dy;
-      g.line(hx + 1, hy + 1, ex, ey, 'w', 1);
-      g.set(ex, ey + 1, 'b'); g.set(ex + 1, ey + 1, 'b');
+      var X = hx * 2 + 2, Y = hy * 2 + 2, ex = X + dx * 2, ey = Y + dy * 2;
+      g.hline(X, Y, ex, ey, 'w');
+      g.hrect(ex - 1, ey + 1, 3, 2, 'b');
     };
   }
   function slingSpin(sx, sy, trail) {
     return function (g, hx, hy) {
-      if (trail) dots(g, trail, 'l');
-      g.line(hx + 1, hy, sx, sy, 'w', 1);
-      g.rect(sx, sy, 2, 2, 'a'); g.set(sx, sy, 'c');
+      if (trail) for (var i = 0; i < trail.length; i++) g.hset(trail[i][0] * 2, trail[i][1] * 2, 'l');
+      g.hline(hx * 2 + 2, hy * 2, sx * 2 + 1, sy * 2 + 1, 'w');
+      g.hrect(sx * 2, sy * 2, 4, 4, 'a'); g.hset(sx * 2, sy * 2, 'c'); g.hset(sx * 2 + 1, sy * 2, 'c');
     };
   }
   function heroFrame(p, lvl) {
-    var g = new Grid(40, 40);
+    var g = new HGrid(40, 40);
     var bx = p.bx || 0, by = p.by || 0, ln = p.lean || 0;
-    var hipX = 19 + bx, hipY = 29 + by, shY = 20 + by;
-    var shBX = 16 + bx + ln, shFX = 23 + bx + ln;
+    var hipX = 20 + bx, hipY = 28 + by, shY = 19 + by;
+    var shBX = 16 + bx + ln, shFX = 22 + bx + ln;
     limb(g, shBX, shY, p.hb[0], p.hb[1], 5, 4, -1, 'S', 'S', 2);
     if (lvl != null) bag(g, lvl, 15 + bx + ln, 18 + by);
     heroLeg(g, hipX - 1, hipY, p.fb, 'S', 'B');
     heroLeg(g, hipX + 1, hipY, p.ff, 's', 'b');
-    unku(g, 15 + bx, 18 + by, ln);
-    if (lvl != null) g.line(16 + bx + ln, 19 + by, 21 + bx + ln, 21 + by, 'b', 1); // amarre de la manta
+    g.ellipse(shBX + 0.5, shY + 0.6, 1.5, 1.3, 'S'); // hombro posterior
+    unku(g, 15 + bx, 17 + by, ln);
+    if (lvl != null) { g.hline((16 + bx + ln) * 2, (19 + by) * 2, (21 + bx + ln) * 2 + 1, (21 + by) * 2 + 1, 'b'); }
     var hx = 17 + bx + ln + (p.hdx || 0), hy = 10 + by + (p.hdy || 0);
-    g.blit(HEAD_HERO, hx, hy);
-    if (p.eye) g.set(hx + 6, hy + 4, p.eye);
-    if (p.mouth) g.set(hx + 6, hy + 6, p.mouth);
-    var fs = p.fs || 0; // pluma en el llauto
-    g.set(hx, hy + 1, 'g'); g.set(hx - 1, hy, 'g'); g.set(hx - 1 + fs, hy - 1, 'g');
-    g.set(hx - 2 + fs, hy - 2, 'r'); g.set(hx - 2 + fs * 2, hy - 3, 'r');
-    var a = limb(g, shFX, shY, p.hf[0], p.hf[1], 5, 4, -1, 's', 's', 2);
-    g.line(shFX, shY, a[0], a[1], 'h', 1);
-    g.set(a[2], a[3] - 1, 'g'); // brazalete
-    if (p.sling) p.sling(g, Math.round(a[2]), Math.round(a[3]));
-    return g.finish();
+    var HX = hx * 2 - 1, HY = hy * 2 - 1;
+    // Llauto rojo y cabello oscuro como en la referencia del guerrero chanka.
+    // Una silueta compacta evita que un adorno alto parezca una antena.
+    g.hblit(HEAD_HERO, HX, HY);
+    g.hrect(HX + 2, HY + 13, 3, 3, 'n');
+    if (p.eye) g.hset(HX + 9, HY + 8, p.eye === 'S' ? 's' : p.eye);
+    if (p.mouth) g.hset(HX + 10, HY + 11, 'S');
+    g.stamp(function (t) {
+      g.ellipse.call(t, shFX + 0.3, shY + 0.6, 1.5, 1.3, 's');
+      var a = limb(t, shFX, shY, p.hf[0], p.hf[1], 5, 4, -1, 's', 's', 2);
+      t.hrect(Math.round(a[0] * 2) - 1, Math.round(a[1] * 2) - 1, 3, 1, 'O'); // brazalete
+      t.hrect(Math.round(a[2] * 2) - 1, Math.round(a[3] * 2) - 3, 3, 1, 'b'); // muñequera
+      t.ellipse(a[2] + 0.4, a[3] + 0.4, 1, 1, 'h');
+      if (p.sling) p.sling(t, Math.round(a[2]), Math.round(a[3]));
+    }, '9');
+    return g.finishHi();
   }
   var RUNC = [[5, 38], [2, 38], [-1, 38], [-4, 37], [-6, 35], [-4, 33], [0, 33], [4, 35]];
   var RUNBY = [0, 1, 0, -1, 0, 1, 0, -1];
   function heroRun(i) {
-    var by = RUNBY[i], ph = i / 8 * Math.PI * 2, s = -Math.cos(ph), shY = 20 + by;
+    var by = RUNBY[i], ph = i / 8 * Math.PI * 2, s = -Math.cos(ph), shY = 19 + by;
     return {
       by: by, lean: 1,
       ff: [20 + RUNC[i][0], RUNC[i][1]], fb: [18 + RUNC[(i + 4) % 8][0], RUNC[(i + 4) % 8][1]],
@@ -441,7 +563,7 @@
   var HERO_POSES = {
     idle: function (i) {
       var by = [0, 0, 1, 1][i];
-      return { by: by, fb: [17, 38], ff: [22, 38], hb: [15, 28 + by], hf: [25, 28 + by], fs: [0, 1, 1, 0][i], sling: slingHang(0, 4) };
+      return { by: by, lean: 1, fb: [17, 38], ff: [24, 38], hb: [16, 26 + by], hf: [25, 26 + by], fs: [0, 1, 1, 0][i], sling: slingHang(0, 4) };
     },
     run: heroRun,
     jump: function (i) {
@@ -461,7 +583,10 @@
         case 3: return { fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 10], sling: slingSpin(18, 8, arc(26, 7, 7, 2.5, 15, 165, 10)) };
         case 4: return {
           bx: 1, lean: 2, fb: [14, 38], ff: [26, 38], hb: [13, 25], hf: [30, 18],
-          sling: function (g, hx, hy) { g.line(hx + 1, hy, hx + 5, hy - 2, 'w', 1); g.line(hx + 6, hy - 3, hx + 9, hy - 3, 'l', 1); }
+          sling: function (g, hx, hy) {
+            g.hline(hx * 2 + 2, hy * 2, hx * 2 + 14, hy * 2 - 3, 'w'); g.hrect(hx * 2 + 13, hy * 2 - 4, 3, 2, 'b');
+            g.hline(hx * 2 + 17, hy * 2 - 5, hx * 2 + 24, hy * 2 - 6, 'l'); g.hline(hx * 2 + 16, hy * 2 - 3, hx * 2 + 22, hy * 2 - 3, 'l');
+          }
         };
         default: return { bx: 1, lean: 1, fb: [15, 38], ff: [25, 38], hb: [14, 27], hf: [28, 25], sling: slingHang(2, 4) };
       }
@@ -477,14 +602,14 @@
     return function (i, lvl) {
       if (anim === 'dead') {
         var g0 = heroFrame(HERO_POSES.dead(0), lvl);
-        return g0.rotCCW().settle(39, 20);
+        return g0.rotCCW().settle(79, 40);
       }
       return heroFrame(HERO_POSES[anim](i), lvl);
     };
   }
   function A(n, fps, loop, build) { return { n: n, fps: fps, loop: loop !== false, build: build }; }
   KINDS.hero = {
-    box: { w: 28, h: 58 }, anchor: 'feet', scale: 2, fw: 40, fh: 40, ax: 20, ay: 40, def: 'idle',
+    box: { w: 28, h: 58 }, anchor: 'feet', scale: 2, res: 2, fw: 80, fh: 80, ax: 40, ay: 80, def: 'idle',
     variant: function (o) { var f = o && o.fill != null ? o.fill : 0.67; return Math.max(0, Math.min(3, Math.round(f * 3))); },
     anims: {
       idle: A(4, 4, true, heroBuild('idle')),
@@ -501,53 +626,82 @@
   /* ------------------------------------------------------------------ */
   /* SOLDADOS de la expedición (arcabucero, piquero)                     */
   /* ------------------------------------------------------------------ */
+  // Morrión de acero con cresta y ala en media luna (alta resolución, 26×12) y rostro barbado.
   var HELM = [
-    '.....xm.....',
-    '....xmmM....',
-    '...xmmmMN...',
-    'm.xmmmmMMN.m',
-    'mmmmmmmmMMNN',
-    '.NNNNNNNNNN.'
+    '............xm............',
+    '...........xmMN...........',
+    '..........xmMMND..........',
+    '.........xmMMMND..........',
+    '........mmMMMMMND.........',
+    '.......mxxMMMMMMND........',
+    '......mxxMMMMMMMNND.......',
+    '......MgMMMgMMMgNND.......',
+    'NN...mMMMMMMMMMMMNND....ND',
+    '.NN.mMMMMMMMMMMMMMNND..NND',
+    '..NNNNNNNNNNNNNNNNNNNNNNND',
+    '...DDDDDDDDDDDDDDDDDDDDDD.'
   ];
-  var FACE_SP = [ // rostro casi oculto por la sombra del ala
-    'nXCCKK',
-    'nXCCkC',
-    'nNCCCC',
-    'nnCCCX',
-    'nnnnnC',
-    '.nnnn.'
+  var FACE_SP = [
+    'nnKKKKKKKK..',
+    'nnCCCCCCCCC.',
+    'nnCCCCCkCCC.',
+    'nnXCCCCkCCCC',
+    'nnCCCCCCCCCC',
+    'nnnCCCCCCCK.',
+    'nnnnCCnnnnn.',
+    'nnnnnnnnCnn.',
+    'nnnnnnnnnnn.',
+    '.nnnnnnnnnn.',
+    '..nnnnnnnn..',
+    '....nnnn....'
   ];
+  // Jubón acuchillado rojo y blanco, gorjal de acero, bandolera con frasquitos de pólvora.
   function torsoArc(g, x, y, ln) {
-    for (var r = 0; r < 9; r++) {
-      var sx = x + Math.round(ln * (8 - r) / 8);
-      for (var i = 0; i < 8; i++) {
-        var c = ['m', 'm', 'M', 'm', 'M', 'M', 'N', 'N'][i];
-        if (r === 2 && i === 2) c = 'x';
-        if (r === 0) c = i < 6 ? 'm' : 'N';
-        if (r === 7) c = i === 5 ? 'g' : 'B';
-        if (r === 8) c = i === 7 ? 'E' : 'D';
-        if (i === 6 && (r === 2 || r === 4)) c = 'g';
-        g.set(sx + i, y + r, c);
+    var X = x * 2, Y = y * 2;
+    for (var r = 0; r < 18; r++) {
+      var sx = X + Math.round(ln * 2 * (17 - r) / 17);
+      for (var i = 0; i < 16; i++) {
+        var c;
+        if (r < 3) { if (r === 0 && (i < 2 || i > 13)) continue; c = r === 2 ? 'M' : 'm'; }
+        else if (r === 14) c = i === 11 || i === 12 ? 'g' : 'B';
+        else if (r > 14) c = (i % 4 < 2) ? 'r' : 'w';
+        else c = (Math.floor((i + 1) / 3) % 2) ? 'w' : 'r';
+        if (c === 'w' && i > 12) c = 'W';
+        g.hset(sx + i, Y + r, c);
       }
     }
-    // bandolera con frasquitos de pólvora
-    g.line(x + ln + 1, y + 1, x + 5, y + 6, 'B', 1);
-    g.set(x + ln + 2, y + 3, 'u'); g.set(x + 4, y + 6, 'u');
+    g.hline(X + ln * 2 + 2, Y + 3, X + 11, Y + 13, 'B'); g.hline(X + ln * 2 + 3, Y + 3, X + 12, Y + 13, 'B');
+    g.hrect(X + ln * 2 + 4, Y + 6, 2, 3, 'u'); g.hrect(X + 8, Y + 9, 2, 3, 'u');
   }
+  // Sobreveste blanca con cruz roja sobre peto de acero (piquero).
   function torsoPiq(g, x, y, ln) {
-    var cols = ['m', 'm', 'M', 'm', 'M', 'M', 'N', 'N'];
-    for (var r = 0; r < 9; r++) {
-      var sx = x + Math.round(ln * (8 - r) / 8);
-      for (var i = 0; i < 8; i++) {
-        var c = cols[i];
-        if (r === 0) c = (i >= 2 && i <= 6) ? 'r' : 'R';
-        if (r === 2 && i === 5) c = 'x';
-        if (r === 7) c = 'N';
-        if (r === 8) c = i % 2 ? 'O' : 'o';
-        g.set(sx + i, y + r, c);
+    var X = x * 2, Y = y * 2;
+    for (var r = 0; r < 18; r++) {
+      var sx = X + Math.round(ln * 2 * (17 - r) / 17);
+      for (var i = 0; i < 16; i++) {
+        var c;
+        if (r < 3) { if (r === 0 && (i < 2 || i > 13)) continue; c = r === 2 ? 'M' : 'm'; }
+        else if (r >= 16) c = i % 3 === 2 ? 'N' : 'M';
+        else {
+          c = i > 13 ? 'W' : 'w';
+          if ((i === 7 || i === 8) && r >= 4 && r <= 14) c = 'r';
+          if ((r === 7 || r === 8) && i >= 3 && i <= 12) c = 'r';
+          if (r === 15) c = 'B';
+        }
+        g.hset(sx + i, Y + r, c);
       }
     }
-    g.set(x + ln + 7, y + 4, 'M'); // peto abombado
+  }
+  // Escudo blanco con cruz roja (adarga), en píxeles finos; X,Y = esquina superior izquierda.
+  function shield(g, X, Y) {
+    for (var j = 0; j < 16; j++) {
+      var half = j < 9 ? 6 : Math.max(1, Math.round(6 * (1 - (j - 8) / 8)));
+      for (var i = -half; i < half; i++) {
+        var c = (Math.abs(i + 0.5) < 1.2 && j > 1 && j < 14) || (j >= 5 && j <= 6 && Math.abs(i + 0.5) < half - 1) ? 'r' : (i > 2 ? 'W' : 'w');
+        if (i === -half || i === half - 1 || j === 0) c = 'M';
+        g.hset(X + 6 + i, Y + j, c);
+      }
+    }
   }
   function breeches(g, x, y, c1, c2) {
     for (var r = 0; r < 5; r++) for (var i = 0; i < 9; i++) {
@@ -561,25 +715,29 @@
     g.set(r[2] + 2, r[3] + 1, 'B');
   }
   function soldier(spec, p) {
-    var g = new Grid(spec.W, spec.H, spec.oy);
+    var g = new HGrid(spec.W, spec.H, spec.oy);
     var bx = p.bx || 0, by = p.by || 0, ln = p.lean || 0;
     var hipX = 19 + bx, hipY = 31 + by, shY = 23 + by, shB = 17 + bx + ln, shF = 22 + bx + ln;
     if (p.under) p.under(g);
     var ab = limb(g, shB, shY, p.hb[0], p.hb[1], 4, 4, -1, spec.sleeve[1], spec.sleeve[1], 2);
+    if (spec.shield) shield(g, shB * 2 - 13, shY * 2 - 1);
     sLeg(g, hipX - 1, hipY, p.fb, spec.hose[1]);
     sLeg(g, hipX + 1, hipY, p.ff, spec.hose[0]);
     breeches(g, 15 + bx, 29 + by, spec.breech[0], spec.breech[1]);
     spec.torso(g, 16 + bx, 22 + by, ln);
     var hx = 17 + bx + ln + (p.hdx || 0), hy = 17 + by + (p.hdy || 0);
-    g.blit(FACE_SP, hx, hy);
-    g.blit(HELM, hx - 3, hy - 5);
+    g.hblit(FACE_SP, hx * 2, hy * 2);
+    g.hblit(HELM, hx * 2 - 7, hy * 2 - 10);
     if (p.item) p.item(g);
     if (p.backHand !== false) g.dot(ab[2], ab[3], 'K', 2);
-    var af = limb(g, shF, shY, p.hf[0], p.hf[1], 4, 4, -1, spec.sleeve[0], spec.sleeve[0], 2);
-    g.dot(af[2], af[3], 'C', 2);
+    g.stamp(function (t) {
+      var af = limb(t, shF, shY, p.hf[0], p.hf[1], 4, 4, -1, spec.sleeve[0], spec.sleeve[0], 2);
+      t.ellipse(shF + 0.4, shY + 0.4, 1.8, 1.5, spec.sleeve[0]);
+      t.dot(af[2], af[3], 'C', 2);
+    }, 'E');
     if (p.after) p.after(g);
     g.oy = 0;
-    return g.finish();
+    return g.finishHi();
   }
   var WALKC = [[3, 38], [1, 38], [-1, 38], [-3, 38], [-1, 36], [2, 36]];
   var WALKBY = [0, 1, 0, 0, 1, 0];
@@ -624,7 +782,7 @@
     var hx = 17 + F.bx + F.lean + F.hdx, hy = 17;
     return { bx: F.bx, lean: F.lean, hdx: F.hdx, fb: [15, 38], ff: [24, 38], hb: [16, 31], hf: F.hf, item: item, after: function (g) { splatFace(g, hx + 3, hy + 2, 3 - i); } };
   }
-  var ARC = { W: 48, H: 40, oy: 0, sleeve: ['d', 'D'], hose: ['d', 'D'], breech: ['d', 'E'], torso: torsoArc };
+  var ARC = { W: 48, H: 40, oy: 0, sleeve: ['r', 'R'], hose: ['d', 'D'], breech: ['r', 'w'], torso: torsoArc };
   function arcPose(anim, i) {
     var p, gh;
     switch (anim) {
@@ -661,14 +819,14 @@
       if (anim === 'dead') {
         var g0 = soldier(spec, poseFn('hit', 0));
         var sq = g0.fit(Math.max(g0.w, g0.h), Math.max(g0.w, g0.h));
-        return sq.rotCCW().settle(spec.H - 1, spec.ax).fit(spec.W, spec.H);
+        return sq.rotCCW().settle(spec.H * 2 - 1, spec.ax * 2).fit(spec.W * 2, spec.H * 2);
       }
       return soldier(spec, poseFn(anim, i));
     };
   }
   ARC.ax = 20;
   KINDS.arcabucero = {
-    box: { w: 30, h: 48 }, anchor: 'feet', scale: 2, fw: 48, fh: 40, ax: 20, ay: 40, def: 'idle',
+    box: { w: 30, h: 48 }, anchor: 'feet', scale: 2, res: 2, fw: 96, fh: 80, ax: 40, ay: 80, def: 'idle',
     anims: {
       idle: A(4, 4, true, soldierBuild(ARC, arcPose, 'idle')),
       walk: A(6, 8, true, soldierBuild(ARC, arcPose, 'walk')),
@@ -701,7 +859,7 @@
     var ca = Math.cos(deg * DEG), sa = Math.sin(deg * DEG);
     return { hb: [bx + ca * d1, by + sa * d1], hf: [bx + ca * d2, by + sa * d2] };
   }
-  var PIQ = { W: 64, H: 44, oy: 4, ax: 20, sleeve: ['o', 'O'], hose: ['e', 'E'], breech: ['o', 'r'], torso: torsoPiq };
+  var PIQ = { W: 64, H: 44, oy: 4, ax: 20, sleeve: ['r', 'R'], hose: ['e', 'E'], breech: ['d', 'D'], torso: torsoPiq, shield: true };
   function piqPose(anim, i) {
     switch (anim) {
       case 'idle':
@@ -721,7 +879,7 @@
     }
   }
   KINDS.piquero = {
-    box: { w: 30, h: 48 }, anchor: 'feet', scale: 2, fw: 64, fh: 44, ax: 20, ay: 44, def: 'walk',
+    box: { w: 30, h: 48 }, anchor: 'feet', scale: 2, res: 2, fw: 128, fh: 88, ax: 40, ay: 88, def: 'walk',
     anims: {
       idle: A(4, 4, true, soldierBuild(PIQ, piqPose, 'idle')),
       walk: A(6, 8, true, soldierBuild(PIQ, piqPose, 'walk')),
@@ -747,6 +905,7 @@
     'mmmmmmmmmmmmmmmMMNNN',
     '.NggNNNNNNNNNNNNggN.'
   ];
+  HELM_CAP = HELM_CAP.map(function (r) { return r.replace(/[mMNx]/g, function (c) { return { m: 'M', M: 'N', N: 'D', x: 'm' }[c]; }); });
   var FACE_CAP = [
     'nnKKKKKKKK',
     'nnXXCCCCCC',
@@ -793,7 +952,7 @@
       var t = r / 25;
       var left = Math.round(x + 1 + ln * (1 - t) - t * (10 + flare) + Math.sin(r * 0.5 + i * 1.6) * (0.6 + t * 1.6));
       var right = x + 6 + Math.round(ln * (1 - t));
-      for (var xx = left; xx <= right; xx++) g.set(xx, y + r - (flare > 6 ? Math.round(t * flare * 0.6) : 0), xx === left ? 'e' : ((xx - left + Math.round(t * 3)) % 5 === 0 ? 'N' : (xx < left + 3 ? 'D' : 'd')));
+      for (var xx = left; xx <= right; xx++) g.set(xx, y + r - (flare > 6 ? Math.round(t * flare * 0.6) : 0), xx === left ? 'g' : ((xx - left + Math.round(t * 3)) % 5 === 0 ? 'R' : (xx < left + 3 ? 'e' : 'r')));
     }
   }
   function plume(g, hx, hy, s) {
@@ -837,16 +996,16 @@
     g.rect(Math.round(r[2]) - 1, Math.round(r[3]) + 2, 6, 1, 'B');
   }
   function capFrame(p, i) {
-    var g = new Grid(88, 72);
+    var g = new HGrid(88, 72);
     var bx = p.bx || 0, by = p.by || 0, ln = p.lean || 0;
     var hipX = 35 + bx, hipY = 55 + by, shY = 40 + by, shB = 31 + bx + ln, shF = 41 + bx + ln;
     cape(g, 28 + bx, 37 + by, ln, i, p.flare || 0);
     if (p.backItem) p.backItem(g);
-    var ab = limb(g, shB, shY, p.hb[0], p.hb[1], 7, 7, -1, 'D', 'D', 3);
+    var ab = limb(g, shB, shY, p.hb[0], p.hb[1], 7, 7, -1, 'R', 'R', 3);
     g.dot(ab[2], ab[3], 'N', 3);
     capLeg(g, hipX - 2, hipY, p.fb, 'D');
     capLeg(g, hipX + 2, hipY, p.ff, 'd');
-    for (var r = 0; r < 5; r++) for (var k = 0; k < 15; k++) g.set(hipX - 7 + k, hipY - 1 + r, k % 3 === 0 ? 'e' : 'd');
+    for (var r = 0; r < 5; r++) for (var k = 0; k < 15; k++) g.set(hipX - 7 + k, hipY - 1 + r, k % 3 === 0 ? 'g' : (k % 3 === 1 ? 'r' : 'R'));
     capTorso(g, 29 + bx, 36 + by, ln);
     var hx = 32 + bx + ln + (p.hdx || 0), hy = 27 + by + (p.hdy || 0);
     g.blit(FACE_CAP, hx, hy);
@@ -855,11 +1014,16 @@
     g.blit(HELM_CAP, hx - 5, hy - 8);
     g.rect(hx + 1, hy + 9, 9, 1, 'w'); // cuello de camisa
     if (p.item) p.item(g);
-    var af = limb(g, shF, shY, p.hf[0], p.hf[1], 7, 7, -1, 'd', 'd', 3);
-    g.ellipse(shF, shY - 1, 3.5, 2.6, function (x, y) { return y < shY - 1 ? 'm' : 'M'; }); // hombrera
-    g.dot(af[2], af[3], 'M', 3);
+    var af;
+    g.stamp(function (t) {
+      af = limb(t, shF, shY, p.hf[0], p.hf[1], 7, 7, -1, 'r', 'r', 3);
+      for (var q = 0.25; q < 0.9; q += 0.3) t.dot(shF + (af[0] - shF) * q, shY + (af[1] - shY) * q, 'w', 1); // acuchillado
+      t.ellipse(shF, shY - 1, 3.5, 2.6, function (x, y) { return y < shY - 1 ? 'm' : 'M'; }); // hombrera
+      t.hline(shF * 2 - 6, shY * 2, shF * 2 + 6, shY * 2, 'g');
+      t.dot(af[2], af[3], 'M', 3);
+    }, 'E');
     if (p.after) p.after(g, af);
-    return g.finish();
+    return g.finishHi();
   }
   var CWALK = [[5, 69], [2, 69], [-2, 69], [-5, 69], [-2, 65], [3, 65]];
   var CRUN = [[9, 68], [1, 69], [-8, 67], [-2, 62]];
@@ -916,13 +1080,13 @@
     return function (i) {
       if (anim === 'defeated' && i === 2) {
         var g0 = capFrame(capPose('hurt', 0), 0);
-        return g0.fit(88, 88).rotCCW().settle(71, 40).fit(88, 72);
+        return g0.fit(176, 176).rotCCW().settle(143, 80).fit(176, 144);
       }
       return capFrame(capPose(anim, i), i);
     };
   }
   KINDS.capitan = {
-    box: { w: 72, h: 96 }, anchor: 'feet', scale: 2, fw: 88, fh: 72, ax: 36, ay: 72, def: 'idle',
+    box: { w: 72, h: 96 }, anchor: 'feet', scale: 2, res: 2, fw: 176, fh: 144, ax: 72, ay: 144, def: 'idle',
     anims: {
       idle: A(8, 8, true, function (i) { var p = capPose('idle', Math.floor(i / 2)); p.fs = [0, 1, 2, 1, 0, -1, -2, -1][i]; return capFrame(p, i * 0.5); }),
       walk: A(6, 7, true, capBuild('walk')),
@@ -963,7 +1127,7 @@
     '...YYYzzz...'
   ];
   function dogFrame(p) {
-    var g = new Grid(52, 32);
+    var g = new HGrid(52, 32);
     var by = p.by || 0, bx = p.bx || 0, pt = p.pitch || 0;
     function Y(x, y) { return y + by + Math.round((x - 24) * pt); }
     var sh = [31 + bx, Y(31, 20)], hp = [14 + bx, Y(14, 19)];
@@ -998,7 +1162,7 @@
     var r3 = limb(g, sh[0] + 1, sh[1], p.fn[0], p.fn[1], 6, 6, -1, 'y', 'y', 2); g.dot(r3[2], r3[3], 'D', 2);
     var r4 = limb(g, hp[0] + 1, hp[1], p.rn[0], p.rn[1], 6, 6, -1, 'y', 'Y', 2); g.dot(r4[2], r4[3], 'D', 2);
     if (p.after) p.after(g);
-    return g.finish();
+    return g.finishHi();
   }
   var GALLOP = [
     { by: 0, fn: [40, 26], ff: [42, 25], rn: [6, 26], rf: [8, 27], tail: 1 },
@@ -1029,7 +1193,7 @@
     return function (i) {
       if (anim === 'dead') {
         // Alano de lado: lomo horizontal, cabeza apoyada y patas relajadas.
-        var g = new Grid(52, 32);
+        var g = new HGrid(52, 32);
         g.line(11, 23, 5, 25, 'Y', 2); g.line(5, 25, 3, 28, 'y', 1);
         g.line(17, 25, 13, 30, 'Y', 2); g.line(29, 25, 34, 30, 'Y', 2);
         g.ellipse(23, 25, 13, 4, function (x, y) {
@@ -1042,13 +1206,13 @@
         g.line(34, 23, 34, 28, 'd', 2); g.set(33, 24, 'm');
         g.line(18, 27, 21, 29, 'Z', 2); g.line(21, 29, 17, 30, 'y', 2);
         g.line(30, 27, 32, 29, 'Z', 2); g.line(32, 29, 37, 30, 'y', 2);
-        return g.finish();
+        return g.finishHi();
       }
       return dogFrame(dogPose(anim, i));
     };
   }
   KINDS.perro = {
-    box: { w: 30, h: 48 }, anchor: 'feet', scale: 2, fw: 52, fh: 32, ax: 24, ay: 32, def: 'run',
+    box: { w: 30, h: 48 }, anchor: 'feet', scale: 2, res: 2, fw: 104, fh: 64, ax: 48, ay: 64, def: 'run',
     anims: {
       idle: A(2, 4, true, dogBuild('idle')),
       run: A(6, 14, true, dogBuild('run')),
@@ -1063,23 +1227,70 @@
   /* ------------------------------------------------------------------ */
   /* LLAMA compañera                                                     */
   /* ------------------------------------------------------------------ */
+  // Cabeza de llama en alta resolución (20×14): cráneo redondo, hocico largo, ojo con brillo.
   var HEAD_LLAMA = [
-    '.wwww.....',
-    'wwwwww....',
-    'wwwwkwww..',
-    'wwwwwwwwwv',
-    'Wwwwwwwwwv',
-    '.WWwwwwWv.',
-    '..WWWWWk..',
-    '...WWWW...'
+    '....wwwwwww.............',
+    '..wwwwwwwwwww...........',
+    '.wwwwwwwwwwwwww.........',
+    '.wwwwwwwwwwwwwww........',
+    'wwwwwwwkkkwwwwwww.......',
+    'wwwwwwkkxkwwwwwwwww.....',
+    'wwwwwwwkkkwwwwwwwwwww...',
+    'wwwwwwwwwwwwwwwwwwwwwv..',
+    'Wwwwwwwwwwwwwwwwwwwwwwv.',
+    'Wwwwwwwwwwwwwwwwwwwwwkv.',
+    'WWwwwwwwwwwwwwwwwwwwwwv.',
+    '.WWwwwwwwwwwwwwwwwwwwv..',
+    '..WWwwwwwwwwwwwwwWWWk...',
+    '...WWWwwwwwwwwWWWWv.....',
+    '....WWWWWWWWWWWWW.......',
+    '.....WWWWWWWWWW.........',
+    '.......WWWWWW...........'
   ];
+  var YARN = ['o', 'j', 't', 'g'];
+  function pompom(g, X, Y, c1, c2) {
+    for (var j = -2; j <= 2; j++) for (var i = -2; i <= 2; i++) if (i * i + j * j <= 5) g.hset(X + i, Y + j, j > 0 || i > 0 ? c2 : c1);
+    g.hset(X - 1, Y - 1, 'x');
+  }
+  function woolTex(g, X0, Y0, X1, Y1, seed) {
+    for (var Y = Y0; Y < Y1; Y++) for (var X = X0; X < X1; X++) {
+      if (X < 0 || Y < 0 || X >= g.w || Y >= g.h) continue;
+      var at = Y * g.w + X;
+      if (g.d[at] !== 'w') continue;
+      var hsh = ((X * 73856093) ^ (Y * 19349663) ^ seed) >>> 0, v = (hsh % 1000) / 1000;
+      if (v < 0.07) g.d[at] = 'V'; else if (v < 0.12) g.d[at] = 'W';
+    }
+  }
+  // Manta tejida (q'epi) sobre el lomo: bandas de rombos, franja turquesa y flecos de colores.
+  function saddle(g, X0, Y0) {
+    for (var r = 0; r < 16; r++) for (var i = 0; i < 30; i++) {
+      var c = 'r';
+      if (r === 0 || r === 15) c = 'R';
+      else if (r === 1 || r === 14) c = 'g';
+      else if (r === 2 || r === 13) c = 'r';
+      else if (r <= 5 || r >= 10) {
+        var rr = r >= 10 ? r - 10 : r - 3, v = Math.abs((i + (r >= 10 ? 3 : 0)) % 6 - 2.5);
+        c = Math.abs(v - rr) < 0.75 ? 'w' : (r >= 10 ? 'j' : 'q');
+      } else {
+        c = ((i >> 1) + r) % 2 ? 't' : 'T';
+        if (i % 8 === 3 || i % 8 === 4) c = r === 7 || r === 8 ? 'g' : 'o';
+      }
+      if (i === 0 || i === 29) c = 'R';
+      g.hset(X0 + i, Y0 + r, c);
+    }
+    for (var k = 1; k < 29; k += 2) {
+      var len = 2 + (k % 3);
+      for (var j = 0; j < len; j++) g.hset(X0 + k, Y0 + 16 + j, YARN[(k >> 1) % 4]);
+    }
+    pompom(g, X0 - 1, Y0 + 15, 'j', 'J'); pompom(g, X0 + 30, Y0 + 15, 't', 'T');
+  }
   function llamaFrame(p, i) {
-    var g = new Grid(48, 52);
+    var g = new HGrid(48, 56, 4);
     var by = p.by || 0, hdx = p.hdx || 0, hdy = p.hdy || 0;
     var sh = [25, 35 + by], hp = [11, 35 + by];
     function lleg(h, f, c1, c2, hoof) {
       var r = limb(g, h[0], h[1], f[0], f[1], 8, 8, -1, c1, c2, 2);
-      g.rect(Math.round(r[2]), Math.round(r[3]) + 1, 2, 1, hoof);
+      g.hrect(Math.round(r[2] * 2), Math.round(r[3] * 2) + 2, 4, 2, hoof);
     }
     lleg([sh[0] - 1, sh[1]], p.ff, 'W', 'W', 'v');
     lleg([hp[0] - 1, hp[1]], p.rf, 'W', 'W', 'v');
@@ -1088,51 +1299,44 @@
     // cuerpo de lana
     var cy = 31 + by;
     g.ellipse(18, cy, 11.5, 6.6, function (x, y) {
-      if (y > cy + 4) return 'v';
-      if (y > cy + 2) return 'W';
-      return y < cy - 3 ? 'V' : ((x * 3 + y * 5) % 11 === 0 ? 'W' : 'w');
+      if (y > cy + 4) return 'W';
+      return y < cy - 3 ? 'V' : 'w';
     });
-    // cuello hacia la cabeza
-    var top = 12 + by + hdy, nx = 29 + hdx;
-    for (var y = top; y <= 30 + by; y++) {
-      var t = (y - top) / (30 + by - top), cx = Math.round(nx + (24 - nx) * t);
-      for (var k = -2; k <= 2; k++) g.set(cx + k, y, k === 2 ? 'W' : ((y + k) % 5 === 0 ? 'W' : 'w'));
+    // cuello hacia la cabeza (en píxeles finos)
+    var top = 12 + by + hdy, nx = 29 + hdx, Yt = top * 2, Yb = (30 + by) * 2;
+    for (var Y = Yt; Y <= Yb; Y++) {
+      var t = (Y - Yt) / (Yb - Yt), cx = Math.round(nx * 2 + (48 - nx * 2) * t) + 1;
+      for (var k = -5; k <= 4; k++) g.hset(cx + k, Y, k >= 3 ? 'W' : 'w');
     }
-    // manta tejida sobre el lomo
-    for (var r = 0; r < 8; r++) for (var x = 10; x <= 24; x++) {
-      var c = 'r';
-      if (r === 1 || r === 6) c = 'g';
-      else if (r === 3 || r === 4) c = (x + r) % 4 < 2 ? 't' : 'T';
-      if (r === 2 || r === 5) c = x % 4 === 0 ? 'w' : (x % 4 === 2 ? 'o' : 'R');
-      if (x === 10 || x === 24) c = 'R';
-      g.set(x, 23 + by + r, c);
-    }
-    for (var fx = 11; fx <= 23; fx += 2) g.set(fx, 31 + by, 'o'); // flecos
-    // cabeza, orejas y pompones
-    var hx = 27 + hdx, hy = 5 + by + hdy;
-    var ear2 = p.ear ? -1 : 0;
+    woolTex(g, 0, 0, g.w, g.h, 7 + i);
+    saddle(g, 20, (23 + by) * 2);
+    // cabeza, orejas y borlas
+    var hx = 27 + hdx, hy = 5 + by + hdy, HX = hx * 2, HY = hy * 2;
+    var e1 = p.ear ? -3 : 0, e2 = i % 3 === 0 ? 1 : 0, k2;
     if (p.earsDown) {
-      // orejas gachas (preocupación)
-      g.line(hx + 1, hy, hx - 3, hy - 2, 'w', 1);
-      g.line(hx + 3, hy, hx - 1, hy - 3, 'W', 1);
+      for (k2 = 0; k2 < 3; k2++) g.hline(HX + 1 + k2, HY, HX - 10 + k2, HY - 3 + k2, 'W');
+      for (k2 = 0; k2 < 3; k2++) g.hline(HX + 5 + k2, HY - 1, HX - 6 + k2, HY - 6 + k2, k2 === 1 ? 'j' : 'w');
     } else {
-      g.line(hx + 1, hy, hx + 1 + ear2, hy - 4, 'w', 1); g.set(hx + 2 + ear2, hy - 4, 'w');
-      g.line(hx + 3, hy, hx + 4 + (i % 3 === 0 ? 1 : 0), hy - 4, 'W', 1); g.set(hx + 5, hy - 4, 'W');
+      for (k2 = 0; k2 < 3; k2++) g.hline(HX + k2, HY - 1, HX - 1 + e1 + k2, HY - 13, 'W');
+      for (k2 = 0; k2 < 3; k2++) g.hline(HX + 5 + k2, HY - 1, HX + 6 + e2 + k2, HY - 13, k2 === 1 ? 'j' : 'w');
     }
-    g.blit(HEAD_LLAMA, hx, hy);
-    if (p.eyeWide) { g.rect(hx + 4, hy + 1, 2, 2, 'k'); g.set(hx + 4, hy + 1, 'x'); } // sorpresa
-    if (p.happy) { g.set(hx + 4, hy + 2, 'w'); g.set(hx + 3, hy + 2, 'k'); g.set(hx + 4, hy + 1, 'k'); g.set(hx + 5, hy + 2, 'k'); }
-    if (p.worry) { g.set(hx + 3, hy + 1, 'v'); g.set(hx + 4, hy, 'v'); g.set(hx + 1, hy + 3, 't'); g.set(hx + 1, hy + 4, 'T'); }
-    if (p.cheeks) { g.ellipse(hx + 7, hy + 5, 2, 1.6, 'w'); g.set(hx + 8, hy + 6, 'W'); g.set(hx + 7, hy + 7, 'W'); }
-    g.rect(hx - 1, hy - 2, 2, 2, 'j'); g.set(hx - 1, hy, 'J'); g.set(hx - 2, hy + 1, 'j');
-    g.rect(hx + 5, hy - 2, 2, 2, 't'); g.set(hx + 6, hy, 'o');
-    if (p.chew) { g.set(hx + 7, hy + 6, 'W'); g.set(hx + 6, hy + 6, 'k'); }
-    if (p.open) { g.set(hx + 8, hy + 5, 'k'); g.set(hx + 9, hy + 5, 'k'); }
-    if (p.puff) g.set(hx + 7, hy + 4, 'W');
+    g.hblit(HEAD_LLAMA, HX - 2, HY - 3);
+    // borlas de lana (aretes) rosada y turquesa colgando de las orejas
+    pompom(g, HX - 2, HY - 2, 'j', 'J'); g.hline(HX - 2, HY + 1, HX - 3, HY + 5, 'j'); g.hline(HX - 1, HY + 1, HX - 1, HY + 4, 'o');
+    pompom(g, HX + 10, HY - 3, 't', 'T'); g.hline(HX + 10, HY, HX + 11, HY + 3, 't'); g.hset(HX + 9, HY + 1, 'g');
+    var EX = HX + 6, EY = HY + 2;
+    if (p.eyeWide) { g.hrect(EX - 1, EY - 1, 4, 4, 'k'); g.hset(EX, EY - 1, 'x'); g.hset(EX + 1, EY - 1, 'x'); }
+    if (p.happy) { g.hrect(EX - 1, EY - 1, 3, 3, 'w'); g.hset(EX - 2, EY + 1, 'k'); g.hset(EX - 1, EY, 'k'); g.hset(EX, EY - 1, 'k'); g.hset(EX + 1, EY - 1, 'k'); g.hset(EX + 2, EY, 'k'); g.hset(EX + 3, EY + 1, 'k'); }
+    if (p.worry) { g.hset(EX - 1, EY - 3, 'v'); g.hset(EX, EY - 3, 'v'); g.hset(EX + 1, EY - 2, 'v'); g.hset(EX - 2, EY + 4, 't'); g.hset(EX - 2, EY + 5, 'T'); }
+    if (p.cheeks) { for (var cyy = -2; cyy <= 2; cyy++) for (var cxx = -3; cxx <= 3; cxx++) if (cxx * cxx / 9 + cyy * cyy / 4 <= 1) g.hset(HX + 15 + cxx, HY + 9 + cyy, cyy === 2 ? 'W' : 'w'); }
+    if (p.chew) { g.hset(HX + 16, HY + 10, 'W'); g.hset(HX + 15, HY + 10, 'k'); }
+    if (p.open) { g.hrect(HX + 15, HY + 9, 4, 1, 'k'); g.hset(HX + 16, HY + 10, 'R'); }
+    if (p.puff) { g.hset(HX + 16, HY + 7, 'W'); g.hset(HX + 17, HY + 7, 'W'); }
     lleg([sh[0] + 1, sh[1]], p.fn, 'w', 'w', 'v');
     lleg([hp[0] + 1, hp[1]], p.rn, 'w', 'W', 'v');
     if (p.after) p.after(g, hx, hy);
-    return g.finish();
+    g.oy = 0;
+    return g.finishHi();
   }
   function llamaPose(anim, i) {
     switch (anim) {
@@ -1179,7 +1383,7 @@
   }
   function llamaBuild(anim) { return function (i) { return llamaFrame(llamaPose(anim, i), i); }; }
   KINDS.llama = {
-    box: { w: 40, h: 70 }, anchor: 'feet', scale: 2, fw: 48, fh: 52, ax: 20, ay: 52, def: 'idle',
+    box: { w: 40, h: 70 }, anchor: 'feet', scale: 2, res: 2, fw: 96, fh: 112, ax: 40, ay: 112, def: 'idle',
     anims: {
       idle: A(8, 6, true, function (i) { var p = llamaPose('idle', Math.floor(i / 2)); p.ear = i === 3 || i === 6; return llamaFrame(p, i); }),
       walk: A(4, 6, true, llamaBuild('walk')),
@@ -1367,7 +1571,7 @@
     var f = getFrame(kind, A, i, variant);
     if (!f.canvas) f.canvas = toCanvas(f.grid, false);
     if (!f.canvas) return false;
-    var s = o.scale != null ? o.scale : K.scale;
+    var res = K.res || 1, s = (o.scale != null ? o.scale : K.scale) / res;
     var bw = o.w != null ? o.w : K.box.w, bh = o.h != null ? o.h : K.box.h;
     var px = x + bw / 2, py = K.anchor === 'center' ? y + bh / 2 : y + bh;
     var face = o.facing < 0 ? -1 : 1;
@@ -1381,8 +1585,8 @@
     ctx.translate(Math.round(px), Math.round(py));
     ctx.scale(face * s, s);
     if (o.outline) {
-      if (f.rimColor !== o.outline) { f.rim = rimCanvas(f.grid, o.outline); f.rimColor = o.outline; }
-      if (f.rim) ctx.drawImage(f.rim, -K.ax - 1, -K.ay - 1);
+      if (f.rimColor !== o.outline) { f.rim = rimCanvas(f.grid, o.outline, res); f.rimColor = o.outline; }
+      if (f.rim) ctx.drawImage(f.rim, -K.ax - res, -K.ay - res);
     }
     ctx.drawImage(f.canvas, -K.ax, -K.ay);
     if (o.flash) {
@@ -1405,7 +1609,8 @@
   function size(kind) {
     var K = KINDS[kind];
     if (!K) return null;
-    return { w: K.box.w, h: K.box.h, anchor: K.anchor, scale: K.scale, frameW: K.fw, frameH: K.fh, anchorX: K.ax, anchorY: K.ay };
+    var res = K.res || 1;
+    return { w: K.box.w, h: K.box.h, anchor: K.anchor, scale: K.scale, frameW: K.fw / res, frameH: K.fh / res, anchorX: K.ax / res, anchorY: K.ay / res, detail: res };
   }
   var ENEMY_TYPES = ['perro', 'arcabucero', 'piquero', 'capitan'];
   var ALIASES = {

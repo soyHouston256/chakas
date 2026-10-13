@@ -6,8 +6,14 @@
 !style.css
 !game.js
 !ui.js
+!competition.js
+!manifest.webmanifest
+!assets/
 !art/*.js
 !tests/
 !scripts/
 !deploy/
 deploy/Caddyfile
+
+!server/
+server/node_modules/

@@ -25,13 +25,25 @@ estricta, `/healthz`). Prueba local: `npm run docker:build && npm run docker:run
 http://localhost:8080. Guía completa (Fly.io, Render/Railway, VPS con Caddy e itch.io con
 `npm run package:itch`): [DEPLOY.md](DEPLOY.md).
 
-## Verificación
+## Competencia y modalidades
 
-`npm run check` comprueba sintaxis. `npm test` verifica munición, recarga, salto, pausa, derrota y victoria con un entorno DOM simulado. La revisión visual y el balance con jugadores reales quedan pendientes: este entorno bloqueó el servidor local y el navegador de pruebas bloqueó las URLs file.
+Elige **Chasqui**, **Inka** o **Pachacútec** antes de empezar. Sacsayhuamán tiene un recorrido 35 % más largo, nuevos encuentros y una terraza opcional. Gana XP, cinco rangos y seis insignias; compite en clasificaciones semanal y general separadas por modalidad.
+
+Para activar perfiles y leaderboard con MongoDB:
+
+```sh
+docker compose -f docker-compose.online.yml up --build -d
+```
+
+Abre http://localhost:8080. Puedes configurar tu instancia con `MONGODB_URI` en `.env` (ver `.env.example`). Sin API el juego conserva progreso local y funciona sin clasificación. Reglas, arquitectura, pruebas y límites: [docs/COMPETENCIA.md](docs/COMPETENCIA.md).
+
+## Verificación del juego
+
+`npm run check` comprueba sintaxis. `npm test` verifica munición, recarga, salto, pausa, derrota y victoria con un entorno DOM simulado. Las pruebas también cubren sesión inicial, progreso local, reintentos y reglas del leaderboard. La integración real con MongoDB se ejecuta con `TEST_MONGODB_URI`; el balance con jugadores reales queda pendiente.
 
 ## Alcance
 
-Un nivel, tres roles de enemigo, un jefe, una compañera, munición limitada, recargas, ataque normal e incendiario, puntaje, pausa y reinicio. Arte geométrico original en Canvas y efectos sintetizados. Sin dependencias externas.
+Un nivel, tres roles de enemigo, un jefe, una compañera, munición limitada, recargas, ataque normal e incendiario, puntaje, pausa y reinicio. Arte geométrico original en Canvas y efectos sintetizados. El cliente funciona sin dependencias externas; la API opcional utiliza el driver de MongoDB.
 
 Pendiente: sprites animados de producción, música, accesibilidad ampliada, más niveles, boleadoras, rescates y validación histórica con bibliografía primaria. El balance inicial requiere playtesting; esta es una base funcional, no una versión comercial terminada.
 

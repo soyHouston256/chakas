@@ -6,19 +6,22 @@
 FROM node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
 WORKDIR /src
 # .dockerignore es una lista blanca: data.txt, docs/, previews, .git... ni siquiera entran al contexto.
-COPY package.json index.html style.css game.js ui.js ./
+COPY package.json index.html style.css game.js ui.js competition.js manifest.webmanifest ./
+COPY assets/ ./assets/
 COPY art/ ./art/
 COPY tests/ ./tests/
+COPY server/*.cjs ./server/
 COPY scripts/ ./scripts/
 COPY deploy/404.html ./deploy/404.html
 RUN npm test && node scripts/build-dist.cjs /dist
 
 FROM nginxinc/nginx-unprivileged:1.30.5-alpine3.24@sha256:15c994d10d6d78658721c3bcafff14cb281fba2a4bdf9d5ba92c416a472516e3
 # FRAME_ANCESTORS: quién puede incrustar el juego en un <iframe> (CSP frame-ancestors).
-# envsubst solo toca esa variable; la salida va a /tmp (compatible con read_only).
+# envsubst procesa FRAME_ANCESTORS y API_UPSTREAM; la salida va a /tmp (compatible con read_only).
 ENV FRAME_ANCESTORS="'self'" \
     NGINX_ENVSUBST_OUTPUT_DIR=/tmp/conf.d \
-    NGINX_ENVSUBST_FILTER="^FRAME_ANCESTORS$"
+    API_UPSTREAM="127.0.0.1:3000" \
+    NGINX_ENVSUBST_FILTER="^(FRAME_ANCESTORS|API_UPSTREAM)$"
 
 USER root
 # Quita el sitio y la configuración por defecto; la configuración queda de root (solo lectura
@@ -30,7 +33,6 @@ COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/nginx/templates/default.conf.template /etc/nginx/conf.d/default.conf
 COPY deploy/nginx/templates/ /etc/nginx/templates/
 COPY --chmod=0755 deploy/nginx/15-chankas-prepare.sh /docker-entrypoint.d/15-chankas-prepare.sh
-RUN rm -f /etc/nginx/templates/default.conf.template
 COPY --from=build /dist/ /usr/share/nginx/html/
 USER 101
 

@@ -65,7 +65,7 @@ Sin Docker: `npm run dev` (servidor Python en :5173) o `npm run build:dist` para
 - Caché: `/` e `index.html` → `no-cache` (se revalida con ETag); JS/CSS con hash en el nombre →
   `public, max-age=31536000, immutable`; 404 y `/healthz` → `no-store`.
 - Cabeceras en todas las respuestas (también en 404):
-  - `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors <FRAME_ANCESTORS>`
+  - `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors <FRAME_ANCESTORS>`
     (sin `'unsafe-inline'`; `data:` solo para las grecas SVG del CSS).
   - `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
     `Permissions-Policy` (cámara, micrófono, geolocalización, sensores, pagos… desactivados),
@@ -183,3 +183,10 @@ Google (que ven su IP). En la UE esto puede requerir mención en la política de
 consentimiento (RGPD). Alternativa futura: descargar los `.woff2` (licencia OFL), servirlos
 desde el propio sitio con `@font-face` en `style.css`, quitar los `<link>` a Google y reducir
 la CSP a `style-src 'self'; font-src 'self'`.
+
+
+## Perfiles y clasificación con MongoDB
+
+La versión online agrega una API Node.js. Ejecuta `docker compose -f docker-compose.online.yml up --build -d` para sitio, API y MongoDB local; configura una instancia propia con `MONGODB_URI` y `MONGODB_DB` en `.env`. nginx envía `/api/` al host definido en `API_UPSTREAM` y permite conexiones del mismo origen mediante CSP. Usa `COOKIE_SECURE=true` detrás de HTTPS. El compose original y el zip de itch.io conservan el modo local cuando no hay API.
+
+La guía de reglas, identidad invitada, persistencia y verificación está en [docs/COMPETENCIA.md](docs/COMPETENCIA.md). MongoDB no expone un puerto al host en el compose online; para pruebas con una instancia externa define `TEST_MONGODB_URI`.

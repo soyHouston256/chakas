@@ -1,0 +1,1 @@
+{"name":"chankas-api","version":"1.0.0","private":true,"scripts":{"start":"node index.cjs","test":"node --test ../tests/server*.cjs"},"dependencies":{"mongodb":"^6.20.0"}}

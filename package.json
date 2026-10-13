@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "python3 -m http.server 5173",
-    "check": "node --check game.js",
-    "test": "node tests/game.cjs",
+    "check": "node --check game.js && node --check ui.js && node --check competition.js && node --check server/index.cjs",
+    "test": "node tests/game.cjs && node --test tests/competition.cjs tests/server*.cjs",
     "build:dist": "node scripts/build-dist.cjs dist/web",
     "package:itch": "node scripts/build-dist.cjs dist/itch --no-404 && rm -f dist/chankas-itch.zip && cd dist/itch && zip -qrX ../chankas-itch.zip . && echo 'dist/chankas-itch.zip listo'",
     "docker:build": "docker build -t chankas:latest .",
-    "docker:run": "docker run --rm --name chankas -p 127.0.0.1:8080:8080 --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true chankas:latest"
+    "docker:run": "docker run --rm --name chankas -p 127.0.0.1:8080:8080 --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true chankas:latest",
+    "online": "docker compose -f docker-compose.online.yml up --build -d",
+    "dev:online": "npm run build:dist && node scripts/dev-online.cjs"
   }
 }

@@ -13,6 +13,7 @@
   --empty: #4a3f4e;
   --gold: #e9b53b;
   --gold-shadow: #8a6a1e;
+  --bronze: #a27c34;
   --cochinilla: #a8301f;
   --red: #d8432f;
   --green: #6e8a47;
@@ -190,234 +191,218 @@ kbd {
   display: inline;
 }
 
-/* Cabecera ------------------------------------------------------------- */
-.site-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 28px 24px 22px;
+/* Página: el juego es el protagonista (sin cabecera grande; el logo va en la franja) ---- */
+body {
+  --chrome: 252px; /* alto reservado bajo el juego: barra de controles + franja + márgenes */
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  text-decoration: none;
+body[data-layout="touch"] {
+  --chrome: 74px; /* solo la franja compacta: los mandos van sobre el juego */
 }
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.brand-name {
-  font-family: var(--font-display);
-  font-size: 44px;
-  line-height: 0.9;
-  letter-spacing: 0.06em;
-  color: var(--gold);
-}
-.brand-sub {
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-.site-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-/* Página --------------------------------------------------------------- */
 .page {
-  max-width: 1120px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 40px 24px 56px;
+  padding: 12px 16px 56px;
   display: flex;
   flex-direction: column;
   gap: 28px;
 }
-.intro {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px 40px;
+body[data-layout="touch"] .page {
+  padding-top: 0;
 }
-.intro-head {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 680px;
-}
-.intro h1 {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(48px, 7vw, 76px);
-  line-height: 0.92;
-  color: var(--cream);
-}
-.intro p {
-  max-width: 340px;
-  color: var(--muted);
+body[data-layout="touch"] .game {
+  margin-inline: -16px;
 }
 
-/* Sección del juego: HUD + escenario + ruta ----------------------------- */
+/* Sección del juego: escenario (con HUD y controles) + franja con la ruta ----------- */
 .game {
   background: var(--deep);
-  padding: 6px;
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.hud {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px 32px;
-  padding: 14px 20px;
-  background: var(--panel);
+.play {
+  position: relative;
 }
-.hud-block {
+
+/* HUD superpuesto: vida y provisiones arriba a la izquierda; etapa y pausa a la derecha. */
+.hud {
+  grid-area: 1 / 1;
+  align-self: start;
+  position: relative;
+  z-index: 1;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: clamp(6px, 1.3cqw, 16px);
+  padding-left: max(clamp(6px, 1.3cqw, 16px), env(safe-area-inset-left));
+  padding-right: max(clamp(6px, 1.3cqw, 16px), env(safe-area-inset-right));
+  font-size: clamp(12px, 1.9cqw, 24px);
+  line-height: 1;
+  pointer-events: none;
+}
+.stage[data-state="playing"] .hud,
+.stage[data-state="paused"] .hud,
+.stage[data-state="lost"] .hud,
+.stage[data-state="won"] .hud {
+  display: flex;
+}
+.stage:not([data-state="playing"]) .hud {
+  opacity: 0.4;
+}
+.hud button {
+  pointer-events: auto;
+}
+.hud-left,
+.hud-right {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(4px, 0.8cqw, 10px);
+  min-width: 0;
 }
-.hud-label {
-  font-size: 14px;
-  letter-spacing: 0.2em;
-  color: var(--muted);
+.hud-right {
+  align-items: flex-end;
+}
+.hud-top {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(4px, 0.8cqw, 10px);
 }
 .hearts {
   display: flex;
-  gap: 6px;
+  gap: clamp(2px, 0.4cqw, 6px);
+  filter: drop-shadow(0 2px 0 rgba(11, 8, 13, 0.7));
 }
-.heart path {
+.heart svg {
+  display: block;
+  width: clamp(18px, 3.1cqw, 42px);
+  height: auto;
+}
+.heart .o {
+  fill: #1b1210;
+}
+.heart .f {
   fill: var(--red);
 }
-.heart.is-empty path {
+.heart .s {
+  fill: var(--cochinilla);
+}
+.heart .h {
+  fill: #ffd9c9;
+}
+.heart.is-empty .f,
+.heart.is-empty .s {
   fill: var(--empty);
 }
-.heart.is-empty rect {
+.heart.is-empty .h {
   display: none;
 }
-.weapons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+/* Paneles oscuros translúcidos con borde de bronce/oro (como el arte clave). */
+.hud-panel,
+.hud-btn {
+  background: rgba(14, 10, 16, 0.8);
+  border: 2px solid var(--bronze);
+  box-shadow:
+    0 0 0 2px rgba(11, 8, 13, 0.85),
+    inset 0 0 0 1px rgba(233, 181, 59, 0.2);
+  color: var(--cream);
 }
-.weapon {
+.hud-res {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--ground);
+  gap: clamp(8px, 2cqw, 26px);
+  padding: clamp(4px, 0.7cqw, 9px) clamp(8px, 1.5cqw, 18px);
 }
-.weapon.is-selected {
-  outline: 3px solid var(--gold);
-  outline-offset: -3px;
-}
-.weapon-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.weapon-name {
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-.weapon-count {
-  font-size: 18px;
+.res {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
   font-weight: 700;
-  line-height: 1.2;
-  color: var(--cream);
   font-variant-numeric: tabular-nums;
 }
-.pips {
-  display: flex;
-  gap: 4px;
+.res .ico svg {
+  display: block;
+  width: 1.35em;
+  height: 1.35em;
 }
-.pip {
-  width: 18px;
-  height: 14px;
-  background: var(--green);
+.res .x {
+  margin-left: 0.15em;
+  font-weight: 400;
+  color: var(--muted);
 }
-.pip.is-empty {
-  background: var(--empty);
+.res.is-selected {
+  color: var(--gold);
 }
-/* Escupitajos de la llama: tres llamas; la que se recupera se rellena de abajo arriba. */
-.spit-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.llama-ico {
+  color: var(--spit);
 }
-.spit-pips {
-  display: flex;
-  gap: 4px;
-}
-.spit-pip {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  background: var(--ground);
-}
-.spit-pip::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: calc(var(--fill, 0) * 100%);
-  background: var(--spit-dark);
-  opacity: 0.45;
-  transition: height 0.25s linear;
-}
-.spit-pip svg {
-  position: relative;
-}
-.spit-pip svg path,
-.llama-ico path {
+svg.llama-ico path {
   fill: var(--spit);
 }
-.spit-pip.is-empty svg path {
-  fill: var(--empty);
+.hud-stage {
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1cqw, 14px);
+  padding: clamp(3px, 0.5cqw, 6px) clamp(10px, 2.2cqw, 28px) clamp(3px, 0.5cqw, 6px) clamp(3px, 0.5cqw, 6px);
 }
-.spit-key {
-  font-size: 13px;
-  letter-spacing: 0.08em;
+.hud-emblem {
+  display: grid;
+  place-items: center;
+  width: 2.5em;
+  height: 2.5em;
+  background: var(--deep);
+  box-shadow: inset 0 0 0 1px var(--bronze);
+}
+.hud-emblem svg {
+  width: 1.8em;
+  height: auto;
+}
+.hud-stage-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2em;
+}
+.hud-stage-name {
+  font-weight: 700;
+  font-size: 1.05em;
+  white-space: nowrap;
+}
+.hud-stage-sub {
+  font-size: 0.78em;
   color: var(--muted);
   white-space: nowrap;
 }
-.spit-key kbd {
-  font-size: 13px;
-  padding: 3px 5px 2px;
-  margin-right: 4px;
+.hud-btn {
+  display: grid;
+  place-items: center;
+  width: clamp(44px, 5.6cqw, 66px);
+  min-height: 44px;
+  padding: 0;
 }
-.hud-spit.is-hint .spit-pips,
-.touch .touch-spit.is-hint {
-  outline: 3px solid var(--gold);
-  outline-offset: 2px;
-  animation: hint-pulse 0.8s steps(2, jump-none) infinite alternate;
+.hud-btn svg {
+  width: 42%;
+  height: auto;
 }
-@keyframes hint-pulse {
-  to {
-    outline-color: var(--spit);
-  }
+.hud-btn:hover {
+  border-color: var(--gold);
 }
-@media (pointer: coarse) {
-  .spit-key {
-    display: none; /* en móvil se usa el botón táctil de la llama */
-  }
+.hud-btn:active {
+  background: var(--cochinilla);
 }
 .hud-quipu {
-  margin-left: auto;
-  align-items: flex-end;
-  gap: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  padding: 0.15em 0.6em 0.1em;
+  font-size: 0.72em;
+}
+.hud-label {
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+.hud-quipu .quipu {
+  font-size: 1.9em;
 }
 
 /* Escenario: canvas 16:9 y pantallas superpuestas en la misma celda ---- */
@@ -428,6 +413,12 @@ kbd {
   background: var(--deep);
   container: stage / inline-size;
   overflow: hidden;
+  /* El lienzo 16:9 cabe en la altura de la ventana junto a la barra y la franja. */
+  width: min(100%, max(320px, calc((100svh - var(--chrome)) * 16 / 9)));
+  margin-inline: auto;
+}
+.stage[data-state="map"] {
+  width: 100%; /* el mapa decide su propio encuadre (apaisado o vertical) */
 }
 .stage > canvas {
   grid-area: 1 / 1;
@@ -514,7 +505,7 @@ kbd {
 }
 /* Sin ui.js (fallback) solo quedan el canvas, la tarjeta clásica y los controles. */
 body:not(.has-ui) .hud,
-body:not(.has-ui) .tocapu-sm,
+body:not(.has-ui) .pad,
 body:not(.has-ui) .screen:not(#overlay),
 body:not(.has-ui) .map-cartouche,
 body:not(.has-ui) .map-panel,
@@ -524,14 +515,20 @@ body:not(.has-ui) [data-action] {
   display: none !important;
 }
 
-/* Título */
+/* Título: el arte clave de fondo (assets/keyart.webp, mismo origen: img-src 'self') con un
+   degradado oscuro que garantiza el contraste del menú, a la derecha. */
 .title-screen {
   align-items: stretch;
+  justify-content: flex-end;
+  background:
+    linear-gradient(270deg, rgba(11, 8, 13, 0.96) 0%, rgba(11, 8, 13, 0.9) 36%, rgba(11, 8, 13, 0.3) 58%, rgba(11, 8, 13, 0) 78%),
+    url("assets/keyart.webp") left center / cover no-repeat,
+    var(--deep);
 }
 .title-panel {
   width: 45.3%;
   min-width: 340px;
-  background: rgba(11, 8, 13, 0.82);
+  background: transparent;
   padding: clamp(28px, 5.4cqw, 56px);
   padding-bottom: clamp(24px, 3.5cqw, 36px);
   display: flex;
@@ -977,22 +974,303 @@ body:not(.has-ui) [data-action] {
   }
 }
 
-/* Barra de ruta (cinco cuerdas del quipu) ------------------------------ */
+/* Controles en pantalla -------------------------------------------------- */
+/* Escritorio (ratón): barra de botones grandes bajo el juego. Son los mismos botones que en
+   táctil; el teclado sigue funcionando. Táctil: se superponen al juego (ver más abajo). */
+.controls {
+  grid-row: 3;
+  grid-column: 1;
+  display: flex;
+  gap: clamp(6px, 1.1cqw, 16px);
+  padding: clamp(8px, 1.2cqw, 16px) clamp(8px, 1.4cqw, 18px);
+  background: #0f0b12;
+  box-shadow: inset 0 2px 0 #241d29;
+}
+.stage[data-state="map"] .controls {
+  display: none;
+}
+.cbtn {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: clamp(52px, 6.2cqw, 80px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 6px;
+  background: linear-gradient(#231c28, #17121b);
+  border: 2px solid #3b3142;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 2px 0 #000;
+  color: var(--cream);
+  font: 400 clamp(13px, 1.65cqw, 21px) / 1.1 var(--font-body);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.cbtn:hover {
+  border-color: #5b4b63;
+}
+.cbtn:active {
+  background: var(--cochinilla);
+}
+.cbtn.is-selected {
+  border-color: var(--gold);
+  box-shadow:
+    0 0 0 1px var(--gold-shadow),
+    inset 0 0 14px rgba(233, 181, 59, 0.2);
+}
+.cbtn-move {
+  flex-grow: 1.3;
+}
+.cbtn-move svg {
+  width: clamp(14px, 1.9cqw, 24px);
+  height: auto;
+}
+.cico svg {
+  display: block;
+  width: auto;
+  height: clamp(22px, 3cqw, 40px);
+  max-width: clamp(28px, 4.2cqw, 54px);
+}
+.cbadge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 1.5em;
+  padding: 1px 4px;
+  background: #3b3340;
+  color: var(--cream);
+  font-weight: 700;
+  font-size: 0.8em;
+  line-height: 1.25;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cbadge-green {
+  background: #3f7c34;
+}
+/* Botón de la llama: cargas de escupitajo y la que se recupera (relleno de abajo arriba). */
+.touch-spit::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--fill, 0) * 100%);
+  background: var(--spit-dark);
+  opacity: 0.3;
+  transition: height 0.25s linear;
+  pointer-events: none;
+}
+.touch-spit.is-empty {
+  color: var(--dim-2);
+}
+.touch-spit.is-empty .llama-ico {
+  color: var(--empty);
+}
+.touch-spit.is-empty .cbadge {
+  background: var(--empty);
+  color: var(--muted);
+}
+.touch-spit.is-hint {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+  animation: hint-pulse 0.8s steps(2, jump-none) infinite alternate;
+}
+@keyframes hint-pulse {
+  to {
+    outline-color: var(--spit);
+  }
+}
+
+/* Táctil (puntero grueso): mandos semitransparentes sobre el juego -------------------- */
+body[data-layout="touch"] .controls {
+  grid-area: 1 / 1;
+  align-self: end;
+  justify-self: center;
+  z-index: 1;
+  padding: 0 0 clamp(6px, 1.8cqw, 16px);
+  gap: clamp(4px, 1cqw, 12px);
+  background: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+body[data-layout="touch"] .stage:not([data-state="playing"]) .controls,
+body[data-layout="touch"] .cbtn-move,
+body[data-layout="touch"] .cbtn-pause,
+body[data-layout="touch"] .cbtn-reload {
+  display: none;
+}
+body[data-layout="touch"][data-reload="true"] .cbtn-reload {
+  display: flex;
+}
+body[data-layout="touch"] .cbtn {
+  flex: none;
+  width: clamp(56px, 11.5cqw, 108px);
+  min-height: 44px;
+  height: clamp(44px, 8cqw, 76px);
+  padding: 2px 4px;
+  gap: 1px;
+  background: rgba(22, 17, 26, 0.66);
+  font-size: clamp(11px, 2cqw, 18px);
+  pointer-events: auto;
+}
+body[data-layout="touch"] .cico svg {
+  height: clamp(16px, 3cqw, 32px);
+}
+body[data-layout="touch"] .cbadge {
+  top: 2px;
+  right: 2px;
+}
+.pad {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+body[data-layout="touch"][data-state="playing"] .pad {
+  display: block;
+}
+.dpad,
+.fire-btn {
+  position: absolute;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.dpad {
+  left: max(10px, env(safe-area-inset-left));
+  width: min(34vh, 148px);
+  background: radial-gradient(circle, rgba(46, 38, 52, 0.4) 0 28%, rgba(20, 15, 24, 0.55) 29% 100%);
+  border: 3px solid rgba(98, 84, 106, 0.85);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.dp {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 30%;
+  height: 30%;
+  color: var(--cream);
+  opacity: 0.85;
+}
+.dp svg {
+  width: 62%;
+  height: auto;
+}
+.dp-up {
+  top: 4%;
+  left: 35%;
+}
+.dp-down {
+  bottom: 4%;
+  left: 35%;
+  opacity: 0.3; /* sin acción: el juego no agacha */
+}
+.dp-left {
+  left: 4%;
+  top: 35%;
+}
+.dp-right {
+  right: 4%;
+  top: 35%;
+}
+.dpad[data-dir~="ArrowLeft"] .dp-left,
+.dpad[data-dir~="ArrowRight"] .dp-right,
+.dpad[data-dir~="ArrowUp"] .dp-up {
+  color: var(--gold);
+  opacity: 1;
+}
+.fire-btn {
+  right: max(10px, env(safe-area-inset-right));
+  width: min(31vh, 128px);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: radial-gradient(circle, rgba(70, 48, 28, 0.7), rgba(24, 16, 14, 0.8));
+  border: 4px solid var(--gold);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 2px rgba(138, 106, 30, 0.9);
+}
+.fire-btn svg {
+  width: 56%;
+  height: auto;
+}
+.fire-btn:active {
+  background: radial-gradient(circle, rgba(168, 48, 31, 0.85), rgba(60, 20, 14, 0.9));
+}
+
+/* Franja inferior: logo, ruta con hitos y lema ------------------------------------- */
+.strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(12px, 2.4vw, 36px);
+  padding: 12px clamp(12px, 2vw, 24px);
+  padding-left: max(clamp(12px, 2vw, 24px), env(safe-area-inset-left));
+  padding-right: max(clamp(12px, 2vw, 24px), env(safe-area-inset-right));
+  background: #0e0a10;
+  box-shadow: inset 0 2px 0 #241d29;
+}
+.strip-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  line-height: 0.85;
+}
+.logo-mountains svg {
+  display: block;
+  width: clamp(60px, 8vw, 116px);
+  height: auto;
+  margin-bottom: -2px;
+}
+.logo-name {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 4.6vw, 66px);
+  letter-spacing: 0.04em;
+  color: var(--gold);
+  text-shadow:
+    0 3px 0 #7a3d12,
+    0 5px 0 #2a160c;
+}
+.logo-sub {
+  margin-top: 6px;
+  font-family: var(--font-pixel);
+  font-size: clamp(9px, 0.95vw, 13px);
+  letter-spacing: 0.1em;
+  color: var(--gold);
+}
+.strip-logo:hover .logo-name {
+  color: #f2c65a;
+}
 .route {
   position: relative;
-  height: 96px;
-  background: var(--panel);
+  min-width: 0;
+  padding-top: 8px;
 }
 .route-line,
 .route-fill {
   position: absolute;
-  top: 22px;
-  height: 4px;
+  top: 14px;
+  height: 3px;
 }
 .route-line {
   left: 10%;
   right: 10%;
-  background: var(--dim-2);
+  background: #5f5763;
 }
 .route-fill {
   left: 10%;
@@ -1001,64 +1279,200 @@ body:not(.has-ui) [data-action] {
 }
 .route-marker {
   position: absolute;
-  top: 14px;
+  top: 11px;
   left: 10%;
-  transform: translateX(-50%);
-  display: flex;
-  line-height: 0;
   z-index: 1;
-}
-.route-pct {
-  position: absolute;
-  top: 0;
-  left: 10%;
-  margin-left: 14px;
-  font-size: 14px;
-  line-height: 1.3;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
+  width: 9px;
+  height: 9px;
+  background: var(--cream);
+  transform: translateX(-50%) rotate(45deg);
+  box-shadow: 0 0 0 2px #0e0a10;
 }
 .route-stages {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 26px;
+  position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr));
 }
-.route-stages li {
+.route-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: #7a717e;
+  text-align: center;
+}
+.route-node {
+  position: relative;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  background: #0e0a10;
+}
+.route-ico svg {
+  display: block;
+  width: clamp(44px, 5.2vw, 78px);
+  height: auto;
+}
+.route-ico .rt {
+  fill: rgba(0, 0, 0, 0.38);
+}
+.route-ico .rl {
+  fill: #f2e6cc;
+}
+.route-ico .rw {
+  fill: #4d6d9c;
+}
+.route-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(11px, 1.15vw, 15px);
+  color: var(--muted);
+}
+.route-stage.is-done {
+  color: #b39553;
+}
+.route-stage.is-current,
+.route-stage.is-current .route-label {
+  color: var(--gold);
+}
+.route-stage.is-fiction .route-node {
+  border-color: var(--blue);
+}
+.strip-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 0 4px;
-  font-size: 15px;
-  line-height: 1.25;
-  color: var(--muted);
+  padding: 10px 18px;
+  background: rgba(11, 8, 13, 0.6);
+  border: 2px solid var(--gold-shadow);
+  box-shadow: inset 0 0 0 1px rgba(233, 181, 59, 0.22);
   text-align: center;
 }
-.route-stages li.is-current {
+.strip-tag {
+  max-width: 21ch;
+  font-size: clamp(11px, 1.1vw, 15px);
+  line-height: 1.25;
+  letter-spacing: 0.05em;
+  color: var(--gold);
+}
+.strip-orn svg {
+  display: block;
+  width: 64px;
+  height: auto;
+}
+.strip-url {
+  font-size: clamp(13px, 1.3vw, 18px);
+  font-weight: 700;
   color: var(--cream);
 }
-.knot {
-  width: 3px;
-  height: 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 1px;
+
+/* Pantalla completa ---------------------------------------------------------------- */
+/* Nativa (Fullscreen API sobre #game-section) o inmersiva (iPhone: fija y a toda la altura). */
+#game-section:fullscreen {
+  width: 100%;
+  height: 100%;
 }
-.knot span {
-  width: 9px;
-  flex: none;
+#game-section::backdrop {
+  background: #000;
+}
+.is-immersive {
+  overflow: hidden;
+}
+.is-immersive #game-section {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+}
+.is-fs #game-section {
+  background: #000;
+  justify-content: center;
+  overflow-y: auto; /* pausa o mapa más altos que la pantalla: se desplazan, no se cortan */
+}
+.is-fs #game-section .strip {
+  display: none;
+}
+body.is-fs {
+  --chrome: 104px; /* escritorio: solo la barra de controles */
+}
+body.is-fs[data-layout="touch"] {
+  --chrome: 0px;
+}
+.is-fs .stage {
+  width: min(
+    100vw - env(safe-area-inset-left) - env(safe-area-inset-right),
+    max(320px, calc((100dvh - var(--chrome)) * 16 / 9))
+  );
 }
 
-/* Controles ------------------------------------------------------------ */
-.controls {
+/* «Gira tu teléfono» (táctil en vertical mientras se juega) ------------------------- */
+.rotate-screen {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: rgba(11, 8, 13, 0.97);
+  text-align: center;
+}
+body[data-rotate="true"] .rotate-screen {
+  display: flex;
+}
+.rotate-screen:focus {
+  outline: none;
+}
+.rotate-screen h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 48px;
+  line-height: 0.9;
+  color: var(--gold);
+}
+.rotate-screen p {
+  max-width: 30ch;
+  color: var(--muted);
+}
+.rotate-ico {
+  animation: rotate-hint 2.4s steps(1, end) infinite;
+}
+@keyframes rotate-hint {
+  50% {
+    transform: rotate(-90deg);
+  }
+}
+.fs-hint {
+  position: fixed;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 150;
+  max-width: min(520px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  background: var(--ground);
+  border: 2px solid var(--gold);
+  font-size: 15px;
+}
+.fs-hint:empty {
+  display: none;
+}
+
+/* Leyenda del teclado -------------------------------------------------------------- */
+.keys-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 14px 28px;
@@ -1066,6 +1480,10 @@ body:not(.has-ui) [data-action] {
   padding: 18px 20px;
   background: var(--panel-2);
   box-shadow: inset 0 0 0 2px var(--border);
+}
+.legend-sound svg {
+  width: 18px;
+  height: auto;
 }
 .ctl {
   display: inline-flex;
@@ -1083,68 +1501,6 @@ body:not(.has-ui) [data-action] {
   font-size: 13px;
   padding: 3px 5px 2px;
 }
-.touch {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 0;
-  background: var(--deep);
-}
-.touch button {
-  flex: 1 1 60px;
-  min-height: 52px;
-  padding: 0 8px;
-  border: 0;
-  background: var(--panel);
-  color: var(--cream);
-  font-family: var(--font-pixel);
-  font-size: 16px;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.touch button:active {
-  background: var(--cochinilla);
-}
-/* Botón de la llama (≥48×48): silueta, nombre y cargas disponibles. */
-.touch .touch-spit {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 56px;
-  background: var(--panel-2);
-  box-shadow: inset 0 -3px 0 0 var(--spit-dark);
-}
-.touch .touch-spit:active {
-  background: var(--spit-dark);
-}
-.touch-count {
-  min-width: 20px;
-  padding: 2px 4px;
-  background: var(--spit);
-  color: var(--ground);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-.touch .touch-spit.is-empty {
-  color: var(--dim-2);
-  box-shadow: none;
-}
-.touch .touch-spit.is-empty .llama-ico path {
-  fill: var(--empty);
-}
-.touch .touch-spit.is-empty .touch-count {
-  background: var(--empty);
-  color: var(--muted);
-}
-@media (min-width: 1000px) and (pointer: fine) {
-  .touch {
-    display: none;
-  }
-}
 
 /* Pie ----------------------------------------------------------------- */
 .site-footer {
@@ -1156,45 +1512,90 @@ body:not(.has-ui) [data-action] {
   color: var(--muted);
 }
 
-/* Teléfono ------------------------------------------------------------ */
-@media (max-width: 640px) {
-  .site-header {
-    padding: 20px 16px 16px;
+/* Pantallas bajas (teléfono en horizontal): franja compacta ------------------------- */
+@media (max-height: 540px) {
+  .strip {
+    gap: 14px;
+    padding-top: 6px;
+    padding-bottom: 6px;
   }
-  .site-nav {
-    gap: 10px;
+  .logo-mountains svg {
+    width: 44px;
   }
-  .site-nav .btn {
-    padding: 0 12px;
+  .logo-name {
+    font-size: 30px;
   }
-  .page {
-    padding: 28px 16px 40px;
-    gap: 22px;
-  }
-  .hud {
-    gap: 12px 18px;
-    padding: 12px 14px;
-  }
-  .weapons {
-    gap: 8px;
-  }
-  .weapon {
-    padding: 6px 8px;
-    gap: 8px;
-  }
-  .weapon svg {
-    display: none;
+  .logo-sub {
+    margin-top: 3px;
+    font-size: 8px;
   }
   .route {
-    height: 76px;
+    padding-top: 4px;
   }
-  .route-stages li {
-    font-size: 13px;
+  .route-line,
+  .route-fill {
+    top: 9px;
   }
-  .route-stages .route-name {
+  .route-marker {
+    top: 6px;
+  }
+  .route-node {
+    width: 12px;
+    height: 12px;
+    border-width: 2px;
+  }
+  .route-stage {
+    gap: 2px;
+  }
+  .route-ico svg {
+    width: 32px;
+  }
+  .route-label {
+    font-size: 11px;
+  }
+  .strip-panel {
+    padding: 4px 10px;
+    gap: 0;
+  }
+  .strip-orn {
     display: none;
   }
+  .strip-tag {
+    font-size: 10px;
+  }
+  .strip-url {
+    font-size: 12px;
+  }
+}
+
+/* Teléfono en vertical / ventanas estrechas ---------------------------------------- */
+@media (max-width: 640px) {
+  .page {
+    padding: 0 12px 40px;
+    gap: 22px;
+  }
+  .game,
+  body[data-layout="touch"] .game {
+    margin-inline: -12px;
+  }
   .controls {
+    flex-wrap: wrap;
+  }
+  .cbtn {
+    flex: 1 1 calc(20% - 8px); /* solo icono: 2 filas (5 + 4) */
+  }
+  .strip {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 12px;
+  }
+  .route {
+    width: 100%;
+  }
+  .route-name {
+    display: none;
+  }
+  .keys-legend {
     gap: 12px 18px;
     padding: 14px;
   }
@@ -1207,5 +1608,216 @@ body:not(.has-ui) [data-action] {
     transition: none !important;
     animation: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Modalidades y competencia */
+.expedition-options, .traveler-card, .leaderboard-card { background: var(--panel); padding: 24px; box-shadow: inset 0 0 0 2px var(--border); min-width: 0; }
+.expedition-options h2, .competition h2 { font-family: var(--font-display); font-weight: 400; font-size: 36px; color: var(--gold); margin-bottom: 14px; }
+#difficulty-selector { border: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+#difficulty-selector label { display: grid; grid-template-columns: 22px 1fr; gap: 6px 8px; padding: 16px; background: var(--ground); cursor: pointer; }
+#difficulty-selector label:has(input:checked) { outline: 2px solid var(--gold); }
+#difficulty-selector input { accent-color: var(--gold); width: 18px; height: 18px; }
+#difficulty-selector strong { color: var(--cream); }
+#difficulty-selector span { grid-column: 2; font-size: 14px; color: var(--muted); }
+#difficulty-selector:disabled label { cursor: default; }
+#difficulty-note, #profile-status, .leaderboard-card > p { margin-top: 12px; font-size: 14px; color: var(--muted); }
+.competition { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 20px; }
+.competition h3 { margin-top: 20px; font-size: 18px; }
+#player-xp { color: var(--gold); margin-bottom: 16px; }
+.alias-row { display: flex; gap: 8px; margin-top: 6px; }
+.competition input, .competition select { background: var(--ground); color: var(--cream); border: 2px solid var(--border); font: inherit; padding: 8px; min-width: 0; min-height: 44px; }
+.alias-row input { width: 100%; }
+.alias-row button { padding: 0 12px; }
+.badge-list { padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.badge-list li { font-size: 14px; padding: 6px 10px; border: 1px solid var(--gold); color: var(--gold); }
+#competition-result { margin-top: 18px; color: var(--gold); }
+.ranking-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.ranking-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.ranking-table { overflow-x: auto; margin-top: 16px; }
+.ranking-table table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+.ranking-table th, .ranking-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); }
+.ranking-table th { color: var(--muted); font-size: 14px; }
+.ranking-table tr.is-self { background: var(--cochinilla); }
+#ranking-personal { color: var(--gold); margin-top: 12px; }
+@media (max-width: 720px) { #difficulty-selector, .competition { grid-template-columns: 1fr; } .expedition-options, .traveler-card, .leaderboard-card { padding: 18px; } }
+
+/* Desafío dentro del título (compacto: tres opciones en fila) */
+.title-panel .expedition-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.title-panel .expedition-options h3 {
+  font-size: 13px;
+}
+.title-panel #difficulty-selector {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+.title-panel #difficulty-selector label {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0 8px;
+  min-height: 44px;
+  padding: 6px 8px;
+  background: rgba(22, 18, 26, 0.88);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.title-panel #difficulty-selector input {
+  grid-row: span 2;
+  margin: 0;
+}
+.title-panel #difficulty-selector strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+.title-panel #difficulty-selector span {
+  font-size: 12px;
+  line-height: 1.2;
+}
+.title-panel #difficulty-note {
+  margin: 0;
+  font-size: 13px;
+}
+/* Escenario bajo (teléfono en horizontal): título compacto */
+@container stage (max-width: 760px) {
+  .title-panel {
+    width: 64%;
+    min-width: 0;
+    padding: 14px 18px;
+    gap: 10px;
+  }
+  .title-head .eyebrow,
+  .title-foot,
+  .title-panel #difficulty-note,
+  .title-panel .expedition-options h3 {
+    display: none;
+  }
+  .title-logo {
+    font-size: 52px;
+  }
+  .title-head .sub {
+    font-size: 13px;
+  }
+  .title-screen .menu {
+    gap: 2px;
+  }
+  .title-screen .menu-item {
+    min-height: 44px;
+    font-size: 17px;
+  }
+}
+@container stage (max-width: 520px) {
+  .title-panel {
+    width: 100%;
+  }
+  .title-screen {
+    background:
+      linear-gradient(rgba(11, 8, 13, 0.82), rgba(11, 8, 13, 0.92)),
+      url("assets/keyart.webp") left center / cover no-repeat,
+      var(--deep);
+  }
+}
+
+.title-screen .tocapu-v {
+  display: none;
+}
+@container stage (max-width: 760px) {
+  .title-panel {
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  .title-logo {
+    font-size: 42px;
+  }
+  .title-panel #difficulty-selector label {
+    padding: 4px 6px;
+    gap: 0 6px;
+  }
+  .title-panel #difficulty-selector strong {
+    font-size: 13px;
+  }
+  .title-panel #difficulty-selector span {
+    display: none;
+  }
+  .title-panel #difficulty-selector input {
+    grid-row: auto;
+    width: 16px;
+    height: 16px;
+  }
+}
+/* HUD en escenarios estrechos: vida, provisiones y botones (la etapa ya está en la franja). */
+@container stage (max-width: 560px) {
+  .hud-stage,
+  .hud-quipu {
+    display: none;
+  }
+  .hud-res {
+    gap: 8px;
+    padding: 3px 6px;
+  }
+  .heart svg {
+    width: 17px;
+  }
+}
+/* Pantallas bajas: la pausa muestra solo el menú (el inventario ya está en el HUD). */
+@media (max-height: 500px) {
+  .pause-screen {
+    padding: 8px;
+  }
+  .pause-box > .tocapu {
+    display: none;
+  }
+  .pause-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pause-info {
+    display: none;
+  }
+  .pause-menu {
+    padding: 12px 18px;
+    gap: 6px;
+    box-shadow: none;
+  }
+  .pause-heading {
+    font-size: 40px;
+  }
+}
+
+/* Barra de controles (ratón): etiquetas en una sola línea, nunca solapadas. En escenarios
+   estrechos los botones quedan solo con icono (aria-label + title como tooltip). */
+.clabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container stage (max-width: 800px) {
+  body:not([data-layout="touch"]) .clabel {
+    display: none;
+  }
+  body:not([data-layout="touch"]) .cbtn {
+    min-height: 48px;
+  }
+}
+/* Pantallas bajas con ratón (portátil pequeño, teléfono horizontal sin táctil): el juego usa
+   toda la altura salvo la barra de controles; la franja y lo demás quedan debajo (se desplaza). */
+@media (max-height: 540px) {
+  body:not([data-layout="touch"]) {
+    --chrome: 60px;
+  }
+  body:not([data-layout="touch"]) .page {
+    padding-top: 0;
+  }
+  body:not([data-layout="touch"]) .controls {
+    padding-block: 6px;
+  }
+  body:not([data-layout="touch"]) .cbtn {
+    min-height: 48px;
   }
 }

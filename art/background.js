@@ -3,10 +3,14 @@
  *
  * Script clásico (sin módulos). Expone window.ChankasBackground.
  *
- * Todo se dibuja a resolución interna baja (alto 180 px) en buffers offscreen y se
- * escala con imageSmoothingEnabled=false (×3 para un canvas de 960×540).
- * Las capas estáticas se pre-renderizan UNA vez (por tamaño/levelLength); por frame solo
- * se hacen drawImage + unos pocos fillRect (nubes, cóndor, humo, fuego, banderas, ichu).
+ * Todo se dibuja a resolución interna (alto 270 px) en buffers offscreen y se escala con
+ * imageSmoothingEnabled=false (×2 para un canvas de 960×540). Las capas estáticas se
+ * pre-renderizan UNA vez (por tamaño/levelLength); por frame solo se hacen unos pocos
+ * drawImage (capas, nubes sueltas, cóndor, cascada, estandartes y humo).
+ *
+ * Recorrido (por cameraX): andenes verdes y estandarte del Inti al inicio → quebrada con
+ * cascada y puente de madera → campamento español (torre, tiendas, cruz de Borgoña) delante
+ * de los muros en zigzag de Sacsayhuamán en la arena del jefe.
  *
  * Coordenadas:
  *  - drawBackground / drawForeground: coordenadas de PANTALLA (llamar sin translate).
@@ -16,7 +20,7 @@
 (function (root) {
   'use strict';
 
-  var LOW_H = 180;
+  var LOW_H = 270;
   var PARALLAX = { far: 0.08, midfar: 0.2, mid: 0.45, fg: 1.3, cloud: 0.03, condor: 0.05 };
 
   // ---------------------------------------------------------------- utilidades
@@ -56,8 +60,20 @@
   function fbm(x, seed) {
     return noise1(x, seed) * 0.6 + noise1(x * 2.03, seed + 7) * 0.28 + noise1(x * 4.1, seed + 13) * 0.12;
   }
+  function noise2(x, y, seed) {
+    var xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    var a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed), c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+    var u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+  function fbm2(x, y, seed) { return noise2(x, y, seed) * 0.55 + noise2(x * 2.1, y * 2.1, seed + 5) * 0.3 + noise2(x * 4.3, y * 4.3, seed + 11) * 0.15; }
   var BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
   function bayer(x, y) { return (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16; }
+  // escoge un tono de una rampa con tramado ordenado (v en 0..1)
+  function ramp(arr, v, x, y) {
+    var f = clamp(v, 0, 1) * (arr.length - 1), i = Math.floor(f);
+    return arr[Math.min(arr.length - 1, f - i > bayer(x, y) ? i + 1 : i)];
+  }
 
   function makeCanvas(w, h) {
     var c = root.document && root.document.createElement ? root.document.createElement('canvas') : null;
@@ -79,17 +95,30 @@
     return this.d[(y * this.w + x) * 4 + 3] > 0;
   };
   Buf.prototype.get = function (x, y) {
+    x = clamp(Math.floor(x), 0, this.w - 1); y = clamp(Math.floor(y), 0, this.h - 1);
     var i = (y * this.w + x) * 4, d = this.d;
     return [d[i], d[i + 1], d[i + 2]];
   };
+  Buf.prototype.tint = function (x, y, c, t) { if (this.has(x, y)) this.set(x, y, mix(this.get(x, y), c, t)); };
   Buf.prototype.fill = function (x, y, w, h, c) {
     for (var j = 0; j < h; j++) for (var i = 0; i < w; i++) this.set(x + i, y + j, c);
+  };
+  Buf.prototype.line = function (x0, y0, x1, y1, c) {
+    x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+    var dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1, err = dx + dy;
+    for (var n = 0; n < 2000; n++) {
+      this.set(x0, y0, typeof c === 'function' ? c(x0, y0) : c);
+      if (x0 === x1 && y0 === y1) break;
+      var e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
   };
   Buf.prototype.ellipse = function (cx, cy, rx, ry, colorFn) {
     for (var y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
       for (var x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-        var dx = (x - cx) / rx, dy = (y - cy) / ry;
-        if (dx * dx + dy * dy <= 1) this.set(x, y, colorFn(x, y, dx, dy));
+        var dx = (x + 0.5 - cx) / rx, dy = (y + 0.5 - cy) / ry;
+        if (dx * dx + dy * dy <= 1) this.set(x, y, typeof colorFn === 'function' ? colorFn(x, y, dx, dy) : colorFn);
       }
   };
   Buf.prototype.toCanvas = function () {
@@ -101,51 +130,52 @@
     }
     return cv;
   };
-
-  /*
-   * Perspectiva atmosférica (QA visual): comprime el rango tonal de una capa lejana hacia
-   * un color de bruma y le quita saturación, para que la capa jugable (suelo, plataformas,
-   * sprites con contorno oscuro) se lea siempre por delante del fondo.
-   */
-  Buf.prototype.haze = function (col, amt, desat) {
-    var d = this.d;
+  // Perspectiva atmosférica: acerca una capa al color de la bruma y le quita saturación.
+  Buf.prototype.haze = function (col, amt, desat, y0, y1, extra) {
+    var d = this.d, w = this.w;
     for (var i = 0; i < d.length; i += 4) {
       if (!d[i + 3]) continue;
+      var a = amt;
+      if (extra) { var y = ((i >> 2) / w) | 0; a += smooth((y - y0) / (y1 - y0)) * extra; }
       var r = d[i], g = d[i + 1], bl = d[i + 2], l = r * 0.3 + g * 0.59 + bl * 0.11;
       r += (l - r) * desat; g += (l - g) * desat; bl += (l - bl) * desat;
-      d[i] = r + (col[0] - r) * amt; d[i + 1] = g + (col[1] - g) * amt; d[i + 2] = bl + (col[2] - bl) * amt;
+      d[i] = r + (col[0] - r) * a; d[i + 1] = g + (col[1] - g) * a; d[i + 2] = bl + (col[2] - bl) * a;
     }
     return this;
   };
 
-  // ---------------------------------------------------------------- paleta andina
+  // ---------------------------------------------------------------- paleta andina (tarde clara)
   var P = (function () {
     var src = {
-      sky: ['#283653', '#343f60', '#41496b', '#535574', '#68617c', '#806c81', '#9b7c85', '#b68d88', '#ce9e8c', '#deb294', '#e8c39f', '#eed0a8', '#f2dab5'],
-      sunCore: '#fff7de', sunRim: '#f9e2a2', sunGlow: '#f3d79c',
-      cloudLit: '#f6e7c8', cloudMid: '#dccdb6', cloudShade: '#a9a3b2', cloudWarm: '#f2cf9a',
-      condor: '#1d1a1c', condorWhite: '#d9d4cb', condorHead: '#b9765f',
-      apuBack: '#9badc9', rockLit: '#8b93ac', rockShade: '#5c6a8d', snowLit: '#f3ece0', snowShade: '#a8b8d3', apuHaze: '#a9bbd2',
-      hillHaze: '#a1adb9',
-      fields: ['#7c8a45', '#8d8a48', '#a08c4c', '#6f7e40', '#97904f', '#b39a55'],
-      andenWall: '#8f8670', andenJoint: '#5f584a', andenShadow: '#596334',
-      valley: ['#7f8c4c', '#8f9152', '#a59656', '#77834a', '#b1a060'],
-      plaza: '#c6b086', cityWall: '#bcae90', cityWallSh: '#958a73', thatch: '#c8a14a', thatchSh: '#95752f',
-      burnt: '#3a302a', ember: '#d0602a', fire1: '#f08a2a', fire2: '#ffd36a', gold: '#e4b847', door: '#3a3028',
-      ichu: ['#b39a4c', '#a68c42', '#8a8442', '#97874a', '#bba356'], ichuRim: '#d4bd6a', ichuRim2: '#c4aa5c', ichuDeep: '#7a6a36',
-      tuft: '#d8c070', tuftSh: '#a88f45',
-      path: '#cdb78e', pathEdge: '#957f5c',
-      stone: ['#939598', '#858b91', '#a5a5a0', '#919292', '#a2998b'], stoneLight: '#e2cba6', stoneDark: '#626772', stoneJoint: '#414750', lichen: '#b4ad78', stoneDeep: '#5a544b',
-      wallShade: '#6d7387', hazeMid: '#8f97a3', hazeFar: '#a9b4bf',
-      platOutline: '#2a211b', platWarm: '#c79a5c',
-      tTrunk: '#9a5638', tTrunkSh: '#6a3826', qLeaf: ['#6f8248', '#4e6233', '#34442a'],
-      mTrunk: '#5a4030', mLeaf: ['#9ab45c', '#7d9748', '#5d7535'], berry: '#b8424a',
-      pole: '#4a3526', flagW: '#eee5d2', flagR: '#a3242b', flagWSh: '#c9bfae',
-      smoke: ['#3b3531', '#5d5651', '#8a837d', '#aaa39b'],
-      grassRim: '#b9a85a', grass: ['#7f8040', '#8f8c45', '#a6984a', '#76783c'],
-      earth: ['#7b5d3d', '#6e5236', '#86683f'], earthDark: '#58422c', earthDeep: '#4a3726', pebble: '#a39a88', pebbleSh: '#5a4430',
-      fgIchu: ['#6e5a26', '#8a7232', '#a48a40'], fgStone: '#57524a', fgStoneLit: '#7f776a', fgStem: '#3f4a2a',
-      cantuta: ['#a8264f', '#b83a2e', '#c2386a'], cantutaTip: '#d9a03a'
+      sky: ['#2c68c2', '#3471c8', '#3d7bce', '#4785d3', '#5390d8', '#5f9bdc', '#6ca5e0', '#7aafe3', '#89b9e7', '#98c3ea', '#a8cced', '#b7d5ef', '#c5ddf1', '#d2e4f2'],
+      sunGlow: '#fff3d2',
+      cloud: ['#8a93b0', '#a8b0c6', '#c9cddb', '#e6e6ea', '#fbf8f1', '#ffecc4'],
+      snow: ['#7486b4', '#93a6cd', '#b7c6e1', '#dfe6f2', '#ffffff'],
+      rock: ['#3f3a58', '#524a68', '#6b5f76', '#877379', '#a48a82'],
+      rangeA: ['#4e6ea6', '#5a7bb0', '#6888ba', '#7896c4', '#89a5cd'],
+      rangeB: ['#355f7c', '#3f6b85', '#4b7890', '#5b879a', '#6e98a3'],
+      rangeC: ['#2f5a3c', '#3b6a42', '#4c7c46', '#65904c', '#82a656'],
+      haze: '#b4cde6', hazeWarm: '#cfd8c8',
+      hill: ['#33461f', '#43592a', '#566e30', '#6d8636', '#869c3e', '#a2b04a', '#c0c25c'],
+      field: ['#7a8a34', '#8f9c3a', '#a7aa44', '#bfb752', '#d6c766'],
+      terrWall: ['#7a776d', '#87837a', '#6c6a63', '#949086', '#81796c'], terrWallLit: '#c9c1aa', terrWallDk: '#45433e', terrJoint: '#38362f',
+      cliff: ['#3d3634', '#4f4642', '#655953', '#7f6f63', '#9a8670', '#b39e80'],
+      water: ['#2f6aa8', '#3f7fbc', '#5d9ad0', '#8bbde2', '#c6e2f4', '#ffffff'],
+      wood: ['#2e1f15', '#4a3220', '#66472c', '#86603a', '#a57b4a'],
+      canvas: ['#7e7b78', '#a9a59d', '#cfcac0', '#ebe7dd', '#fbf9f3'],
+      flagW: '#f2eee4', flagWSh: '#c9c2b4', flagR: '#b3202a', flagRSh: '#7e1620',
+      incaR: '#b5262a', incaRSh: '#7a1719', incaRLt: '#d8473a', gold: '#f2c23a', goldSh: '#b07f1a', goldLt: '#ffe58a',
+      pole: '#4a3526', poleLt: '#7a5a3a',
+      condor: '#1c1719', condorMid: '#3a3133', condorWhite: '#e8e2d6', condorHead: '#c47a5e',
+      stone: ['#5b5a57', '#666460', '#545558', '#6d6860', '#5f5b56', '#73706a'], stoneLight: '#aaa597', stoneDark: '#343437', stoneJoint: '#1c1c1f', lichen: '#8c9c48',
+      sacsa: ['#a8a296', '#b6af9f', '#9a958b', '#aea692', '#bdb5a3'], sacsaLight: '#e2dbc8', sacsaDark: '#6c6860', sacsaJoint: '#4a4741',
+      grass: ['#d8cf5e', '#b9b746', '#98a33a', '#76882f', '#566a27', '#3f5021'],
+      tuft: '#d0c752', tuftSh: '#93a036', tuftDk: '#5a7228',
+      smoke: ['#5b5651', '#7d776f', '#a19b92', '#c4beb4'],
+      fgGrass: ['#4f6420', '#6a7f28', '#8c9a32', '#b2b444', '#d6cc5c'], fgStone: '#47453f', fgStoneLit: '#7a756a', fgStem: '#3f5a22',
+      cantuta: ['#a8264f', '#c2386a', '#b83a2e'], cantutaTip: '#e9b23a',
+      tree: ['#1f361c', '#2b4a24', '#3b622c', '#507c34', '#6b963e'], trunk: '#4e3524',
+      platOutline: '#16130f'
     };
     var o = {};
     for (var k in src) o[k] = Array.isArray(src[k]) ? src[k].map(hex) : hex(src[k]);
@@ -155,7 +185,7 @@
   // ---------------------------------------------------------------- piedra poligonal inca
   /*
    * Rellena un muro de piedras poligonales encajadas: hiladas irregulares con bordes
-   * inclinados, juntas finas, esquinas biseladas (almohadillado) y luz de tarde (arriba a la izquierda).
+   * inclinados, juntas finas, aristas almohadilladas y luz de tarde (arriba a la izquierda).
    * topFn(x) -> y superior (global), botY -> y inferior. shadeFn(x,y,c) -> color final.
    */
   function renderStones(b, x0, x1, topFn, botY, st, seed, shadeFn) {
@@ -174,7 +204,7 @@
       var arr = new Array(n + 1), vx = 0, vy = yb + Math.round(rng() * 2 * jit - jit);
       var nx = Math.min(n, 3 + Math.floor(rng() * 6)), ny = yb + Math.round(rng() * 2 * jit - jit);
       for (i = 0; i <= n; i++) {
-        while (i > nx) { vx = nx; vy = ny; nx = Math.min(n, vx + 3 + Math.floor(rng() * 6)); ny = yb + Math.round(rng() * 2 * jit - jit); }
+        while (i > nx) { vx = nx; vy = ny; nx = Math.min(n, vx + 3 + Math.floor(rng() * 8)); ny = yb + Math.round(rng() * 2 * jit - jit); }
         var tt = nx === vx ? 0 : (i - vx) / (nx - vx);
         var v = Math.round(vy + (ny - vy) * tt);
         if (v > prev[i] - 2) v = prev[i] - 2;
@@ -208,16 +238,20 @@
           else {
             var sid = hash(k * 7919 + j, seed);
             col = st.tones[Math.floor(sid * st.tones.length)];
-            if (dy === 1) col = mix(col, st.light, 0.45);
-            else if (dyb === 0) col = mix(col, st.dark, 0.45);
-            else if (dl === 1) col = mix(col, st.light, 0.38);
-            else if (dr === 0) col = mix(col, st.dark, 0.3);
+            // almohadillado: arista superior/izquierda con luz, inferior/derecha en sombra
+            if (dy === 1) col = mix(col, st.light, 0.6);
+            else if (dy === 2) col = mix(col, st.light, 0.22);
+            else if (dyb === 0) col = mix(col, st.dark, 0.55);
+            else if (dyb === 1) col = mix(col, st.dark, 0.22);
+            if (dl === 1) col = mix(col, st.light, 0.4);
+            else if (dl === 2) col = mix(col, st.light, 0.12);
+            else if (dr === 0) col = mix(col, st.dark, 0.45);
             var hs = hash2(x0 + i, y, seed + 3);
-            if (hs < 0.045) col = mix(col, st.dark, 0.25);
-            else if (hs > 0.977) col = mix(col, st.lichen, 0.35);
-            else if (hs > 0.92) col = mix(col, st.light, 0.24);
-            if (dy > 1 && dyb > 0 && dl > 1 && dr > 0)
-              col = mix(col, st.dark, bayer(x0 + i, y) < t * 0.35 ? 0.12 : 0);
+            if (hs < 0.05) col = mix(col, st.dark, 0.3);
+            else if (hs > 0.975) col = mix(col, st.lichen, 0.4);
+            else if (hs > 0.92) col = mix(col, st.light, 0.2);
+            if (dy > 2 && dyb > 1 && dl > 2 && dr > 0)
+              col = mix(col, st.dark, bayer(x0 + i, y) < t * 0.5 ? 0.14 : 0);
           }
           if (y === tops[i] && col !== st.joint) col = mix(col, st.light, 0.35);
           if (shadeFn) col = shadeFn(x0 + i, y, col);
@@ -226,459 +260,501 @@
       }
     }
   }
-  function stoneStyle(minW, maxW, minH, maxH, slant, jit) {
-    return { minW: minW, maxW: maxW, minH: minH, maxH: maxH, slant: slant, jit: jit,
-      tones: P.stone, light: P.stoneLight, dark: P.stoneDark, joint: P.stoneJoint, lichen: P.lichen };
+  function stoneStyle(minW, maxW, minH, maxH, slant, jit, pal) {
+    pal = pal || 'stone';
+    var s = pal === 'sacsa'
+      ? { tones: P.sacsa, light: P.sacsaLight, dark: P.sacsaDark, joint: P.sacsaJoint }
+      : { tones: P.stone, light: P.stoneLight, dark: P.stoneDark, joint: P.stoneJoint };
+    s.minW = minW; s.maxW = maxW; s.minH = minH; s.maxH = maxH; s.slant = slant; s.jit = jit; s.lichen = P.lichen;
+    return s;
   }
 
-  // ---------------------------------------------------------------- 1. cielo
-  function buildSky(w) {
-    var b = new Buf(w, LOW_H), stops = P.sky, n = stops.length;
-    var sunX = Math.round(w * 0.24), sunY = 43;
-    for (var y = 0; y < LOW_H; y++) {
-      var t = Math.min(1, Math.pow(y / 118, 1.1)), f = t * (n - 1), i0 = Math.floor(f), fr = f - i0;
-      for (var x = 0; x < w; x++) {
-        var c = stops[fr > bayer(x, y) ? Math.min(n - 1, i0 + 1) : i0];
-        var dx = x - sunX, dy = y - sunY, d = Math.sqrt(dx * dx + dy * dy);
-        // Disco uniforme: ningún detalle de textura atraviesa el núcleo.
-        if (d <= 6) c = P.sunCore;
-        else if (d <= 7.5) c = P.sunRim;
-        else if (d < 38) {
-          var g = 1 - (d - 7.5) / 30.5; g *= g;
-          var lv = Math.floor(g * 4 + bayer(x, y));
-          if (lv > 0) c = mix(c, P.sunGlow, lv * 0.18);
-        }
-        b.set(x, y, c);
-      }
+  // ---------------------------------------------------------------- nubes volumétricas
+  var LIGHT = (function () { var x = -0.55, y = -0.62, z = 0.56, l = Math.sqrt(x * x + y * y + z * z); return [x / l, y / l, z / l]; })();
+  function paintCumulus(b, cx, baseY, wid, hgt, seed, hazeAmt, hazeCol) {
+    var r = makeRng(seed), blobs = [], n = Math.max(4, Math.round(wid / 6)), i;
+    for (i = 0; i < n; i++) {
+      var u = r() * 2 - 1, env = Math.sqrt(Math.max(0, 1 - u * u * 0.92));
+      var rad = hgt * (0.2 + 0.45 * env) * (0.7 + 0.3 * r());
+      blobs.push({ x: cx + u * wid * 0.5, y: baseY - rad * (0.45 + 0.3 * r()) - env * hgt * 0.3, r: rad });
     }
-    return b.toCanvas();
-  }
-  function buildCloud(seed, w, h) {
-    var r = makeRng(seed), b = new Buf(w, h), blobs = [], nb = 3 + Math.floor(r() * 3);
-    for (var i = 0; i < nb; i++) blobs.push({ x: w * (0.2 + 0.6 * r()), y: h * (0.45 + 0.2 * r()), rx: w * (0.14 + 0.16 * r()), ry: h * (0.3 + 0.25 * r()) });
-    blobs.push({ x: w * 0.5, y: h * 0.62, rx: w * 0.42, ry: h * 0.22 });
-    function inside(x, y) {
-      if (y > h * 0.86 || x < 0 || y < 0 || x >= w) return false;
-      for (var k = 0; k < blobs.length; k++) {
-        var dx = (x - blobs[k].x) / blobs[k].rx, dy = (y - blobs[k].y) / blobs[k].ry;
-        if (dx * dx + dy * dy <= 1) return true;
-      }
-      return false;
+    var nb = blobs.length;
+    for (i = 0; i < nb; i++) if (r() < 0.7) {
+      var B = blobs[i], a = -Math.PI * (0.15 + 0.7 * r());
+      blobs.push({ x: B.x + Math.cos(a) * B.r * 0.75, y: B.y + Math.sin(a) * B.r * 0.75, r: B.r * (0.32 + 0.22 * r()) });
     }
-    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
-      if (!inside(x, y)) continue;
-      var edge = !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
-      if (edge && ((x + y) & 1)) continue;
-      var yy = y / h, c = yy < 0.38 ? P.cloudLit : yy < 0.66 ? P.cloudMid : P.cloudShade;
-      if (x > w * 0.62 && yy < 0.55) c = P.cloudWarm;
+    var X0 = Math.floor(cx - wid / 2 - hgt), X1 = Math.ceil(cx + wid / 2 + hgt), Y0 = Math.floor(baseY - hgt * 1.7);
+    for (var y = Math.max(0, Y0); y <= baseY + 1 && y < b.h; y++) for (var x = Math.max(0, X0); x <= X1 && x < b.w; x++) {
+      if (y > baseY + (noise1(x * 0.25, seed) - 0.5) * 3) continue;
+      var best = -1, nx = 0, ny = 0;
+      for (i = 0; i < blobs.length; i++) {
+        var Bb = blobs[i], dx = (x + 0.5 - Bb.x) / Bb.r, dy = (y + 0.5 - Bb.y) / Bb.r, q = 1 - dx * dx - dy * dy;
+        if (q > best) { best = q; nx = dx; ny = dy; }
+      }
+      if (best < 0) continue;
+      var nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+      var lum = (nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]) * 0.5 + 0.5;
+      var kb = (y - (baseY - hgt * 0.5)) / (hgt * 0.5);
+      if (kb > 0) lum -= kb * 0.38;
+      lum += (fbm2(x * 0.15, y * 0.15, seed) - 0.5) * 0.12;
+      var c = ramp(P.cloud.slice(0, 5), lum * 1.12 - 0.08, x, y);
+      if (best < 0.09 && lum > 0.62) c = P.cloud[5];
+      if (hazeAmt) c = mix(c, hazeCol, hazeAmt);
       b.set(x, y, c);
     }
-    return b.toCanvas();
-  }
-  function buildCondor(frame) {
-    var w = 17, h = 7, b = new Buf(w, h), cx = 8, cy = 3;
-    for (var dx = -8; dx <= 8; dx++) {
-      var a = Math.abs(dx), lift = Math.round(a * (frame ? 0.24 : 0.1)), y = cy - lift;
-      if (a === 0) continue;
-      b.set(cx + dx, y, P.condor);
-      if (a < 6) b.set(cx + dx, y + 1, P.condor);
-      if (a >= 3 && a <= 5) b.set(cx + dx, y, P.condorWhite);
-      if (a >= 7 && (a & 1)) b.set(cx + dx, y - 1, P.condor);
-    }
-    b.set(cx, cy - 1, P.condorHead); b.set(cx, cy, P.condorWhite);
-    b.set(cx, cy + 1, P.condor); b.set(cx, cy + 2, P.condor);
-    return b.toCanvas();
   }
 
-  // ---------------------------------------------------------------- 2. Apus nevados
-  function buildFar(w) {
-    var b = new Buf(w, LOW_H), rng = makeRng(11), peaks = [], x = -30, base = 116;
-    while (x < w + 50) {
-      var sharp = rng() < 0.4;
-      peaks.push(sharp
-        ? { cx: x, h: 56 + rng() * 14, sl: 1.25 + rng() * 0.4, sr: 1.05 + rng() * 0.4, massif: false }
-        : { cx: x, h: 42 + rng() * 12, sl: 0.65 + rng() * 0.3, sr: 0.55 + rng() * 0.3, massif: true });
-      x += 58 + rng() * 52;
-    }
-    // Salkantay (piramidal) hacia el centro y Ausangate (macizo ancho) hacia el final
-    var hero = Math.floor(peaks.length * 0.4);
-    peaks[hero].h = 74; peaks[hero].sl = 1.5; peaks[hero].sr = 1.2; peaks[hero].massif = false;
-    var aus = Math.min(peaks.length - 2, Math.floor(peaks.length * 0.78));
-    peaks[aus].h = 62; peaks[aus].sl = 0.6; peaks[aus].sr = 0.5; peaks[aus].massif = true;
-
-    function peakH(p, xx) {
-      var dx = xx - p.cx, v = p.h - Math.abs(dx) * (dx < 0 ? p.sl : p.sr);
-      if (p.massif) v += 4 * Math.abs(Math.sin(dx * 0.22)) - 2;
-      return v;
-    }
-    for (x = 0; x < w; x++) {
-      // cordillera lejana
-      var tb = Math.round(base - 22 - fbm(x * 0.03, 5) * 18);
-      for (var y = tb; y < LOW_H; y++) b.set(x, y, mix(P.apuBack, P.apuHaze, y > base - 8 ? 0.5 : 0.15));
-      // picos principales
-      var best = -1e9, bp = peaks[0];
-      for (var k = 0; k < peaks.length; k++) { var hv = peakH(peaks[k], x); if (hv > best) { best = hv; bp = peaks[k]; } }
-      best += (fbm(x * 0.15, 21) - 0.5) * 5;
-      if (best < 4) continue;
-      var top = Math.round(base - best), snowline = 38 + fbm(x * 0.1, 31) * 7 - (bp.massif ? 6 : 0);
-      var couloir = noise1(x * 0.7, 41) > 0.6;
-      for (y = top; y < LOW_H; y++) {
-        var alt = base - y;
-        var ridge = bp.cx + Math.sin(y * 0.45 + bp.cx) * 1.6 + (top - y) * 0.05;
+  // ---------------------------------------------------------------- cordilleras
+  /*
+   * Picos con arista: cada columna pertenece al pico más alto; la cara izquierda recibe luz
+   * y la derecha queda en sombra. Las costillas (paralelas a la pendiente) rompen las caras
+   * y, con opts.snow, la nieve baja por las canaletas.
+   */
+  function paintPeaks(b, peaks, o) {
+    var w = b.w, H = b.h;
+    for (var x = 0; x < w; x++) {
+      var top = 1e9, p = null;
+      for (var k = 0; k < peaks.length; k++) {
+        var q = peaks[k], dx = x - q.x;
+        var tv = q.y + Math.abs(dx) * (dx < 0 ? q.sl : q.sr);
+        if (tv < top) { top = tv; p = q; }
+      }
+      top += (fbm(x * 0.05, o.seed) - 0.5) * o.jag + (noise1(x * 0.4, o.seed + 3) - 0.5) * o.jag * 0.35;
+      top = Math.round(top);
+      if (top >= H) continue;
+      for (var y = Math.max(0, top); y < H; y++) {
+        var depth = y - p.y;
+        var ridge = p.x + depth * p.skew + (noise1(y * 0.09, o.seed + p.i * 5) - 0.5) * 7 * Math.min(1, depth / 30);
         var lit = x < ridge;
-        var snow = alt > snowline || (couloir && alt > snowline - 4 - noise1(x * 0.9, 43) * 12) ||
-          (alt > snowline - 3 && bayer(x, y) < (alt - snowline + 3) / 3);
-        var c = snow ? (lit ? P.snowLit : P.snowShade) : (lit ? P.rockLit : P.rockShade);
-        if (y === top && snow) c = lit ? P.snowLit : mix(P.snowShade, P.snowLit, 0.4);
-        if (alt < 22) c = mix(c, P.apuHaze, Math.floor(((22 - alt) / 22) * 4 + bayer(x, y)) / 4 * 0.7);
+        var s = lit ? x + depth / p.sl : x - depth / p.sr;
+        var f = fbm(s * 0.11, o.seed + 17 + p.i);
+        var rib = lit ? f > 0.6 : f > 0.64;
+        var tex = fbm2(x * 0.12, y * 0.12, o.seed + 31);
+        var c;
+        var snowLine = p.snow ? p.y + p.snow + (fbm(x * 0.04, o.seed + 9) - 0.5) * 24 : -1;
+        var snowy = p.snow && (y < snowLine || (f < 0.42 && y < snowLine + 34 * (0.42 - f) / 0.42) || (y < snowLine + 4 && bayer(x, y) < (snowLine + 4 - y) / 4));
+        if (snowy) {
+          if (lit) c = rib ? P.snow[2] : (tex > 0.6 ? P.snow[3] : P.snow[4]);
+          else c = (x - ridge < 2.5) ? P.snow[0] : (rib ? P.snow[2] : (tex > 0.58 ? P.snow[2] : P.snow[1]));
+        } else {
+          var pal = o.pal;
+          if (lit) c = rib ? pal[2] : ramp(pal.slice(2), 0.35 + (tex - 0.5) * 1.4 + (y === top ? 0.5 : 0), x, y);
+          else c = rib ? pal[2] : ramp(pal.slice(0, 3), (tex - 0.3) * 1.2, x, y);
+        }
+        if (o.green && !snowy) {
+          var gv = smooth((y - (o.green - 20 + (fbm(x * 0.03, o.seed + 41) - 0.5) * 30)) / 28);
+          if (gv > bayer(x, y)) c = mix(c, lit ? P.rangeC[3] : P.rangeC[1], 0.55);
+        }
+        var hz = o.haze + smooth((y - o.hy0) / (o.hy1 - o.hy0)) * o.hazeBot;
+        if (hz > 0) c = mix(c, o.hazeCol || P.haze, hz);
         b.set(x, y, c);
       }
     }
-    b.haze(P.apuHaze, 0.12, 0.12);
+  }
+  function peakList(rng, w, base, spacing, hmin, hmax, slope, snow) {
+    var arr = [], x = -20 - rng() * spacing[0], i = 0;
+    while (x < w + 60) {
+      var h = hmin + rng() * (hmax - hmin);
+      arr.push({ i: i++, x: x, y: base - h, sl: slope[0] + rng() * slope[1], sr: slope[0] + rng() * slope[1], skew: (rng() - 0.5) * 0.3, snow: snow ? snow[0] + rng() * snow[1] : 0 });
+      x += spacing[0] + rng() * spacing[1];
+    }
+    return arr;
+  }
+
+  // ---------------------------------------------------------------- 1. cielo, nubes y Apus
+  function buildFar(w) {
+    var b = new Buf(w, LOW_H), stops = P.sky, n = stops.length, x, y;
+    var sunX = -30, sunY = -10;
+    for (y = 0; y < LOW_H; y++) {
+      var t = Math.min(1, Math.pow(y / 205, 1.05)), f = t * (n - 1), i0 = Math.floor(f), fr = f - i0;
+      for (x = 0; x < w; x++) {
+        var c = stops[fr > bayer(x, y) ? Math.min(n - 1, i0 + 1) : i0];
+        var dx = x - sunX, dy = (y - sunY) * 1.4, d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 170) {
+          var g = 1 - d / 170; g *= g;
+          var lv = Math.floor(g * 5 + bayer(x, y));
+          if (lv > 0) c = mix(c, P.sunGlow, lv * 0.12);
+        }
+        b.set(x, y, c);
+      }
+    }
+    // cúmulos altos (arriba a la izquierda, como en el arte clave) y un par a la derecha
+    paintCumulus(b, 30, 62, 120, 46, 101, 0, null);
+    paintCumulus(b, 95, 92, 110, 34, 103, 0.04, P.haze);
+    paintCumulus(b, Math.round(w * 0.72), 40, 60, 16, 105, 0.05, P.haze);
+    paintCumulus(b, Math.round(w * 0.93), 70, 70, 20, 107, 0.05, P.haze);
+    // Apus: Salkantay piramidal dominante y cordillera nevada
+    var rng = makeRng(11), peaks = peakList(rng, w, 168, [70, 70], 45, 85, [0.9, 0.5], [30, 26]);
+    var sx = Math.round(w * 0.47);
+    peaks = peaks.filter(function (p) { return Math.abs(p.x - sx) > 70; });
+    peaks.push({ i: 99, x: sx, y: 14, sl: 0.92, sr: 0.8, skew: 0.08, snow: 84 });
+    peaks.push({ i: 98, x: sx - 52, y: 66, sl: 1.1, sr: 1.0, skew: -0.1, snow: 34 });
+    peaks.push({ i: 97, x: sx + 58, y: 58, sl: 0.9, sr: 0.9, skew: 0.12, snow: 36 });
+    paintPeaks(b, peaks, { seed: 21, jag: 9, pal: P.rock, haze: 0.04, hy0: 110, hy1: 200, hazeBot: 0.45 });
+    // banco de nubes al pie de las montañas
+    for (var k = 0; k < 9; k++) {
+      var cxk = Math.round((k / 8) * w + (hash(k, 109) - 0.5) * 40);
+      paintCumulus(b, cxk, 168 + Math.round(hash(k, 110) * 12), 70 + hash(k, 111) * 50, 26 + hash(k, 112) * 18, 120 + k, 0.08, P.haze);
+    }
+    return b.toCanvas();
+  }
+  function buildCloudSprite(seed, w, h) {
+    var b = new Buf(w, h);
+    paintCumulus(b, w / 2, h - 2, w * 0.62, h * 0.8, seed, 0, null);
+    return b.toCanvas();
+  }
+  // cóndor andino planeando (alas con dedos y banda blanca)
+  function buildCondor(frame) {
+    var w = 31, h = 13, b = new Buf(w, h), cx = 15, cy = 6;
+    var lift = [0, -0.18, 0.12][frame];
+    for (var side = -1; side <= 1; side += 2) {
+      for (var a = 1; a <= 14; a++) {
+        var y = cy - Math.round(a * lift + (a > 9 ? (a - 9) * 0.25 : 0) * (frame === 1 ? -1 : 1));
+        var th = a < 4 ? 3 : a < 9 ? 2 : 1;
+        for (var j = 0; j < th; j++) b.set(cx + side * a, y + j - (a < 4 ? 1 : 0), P.condor);
+        if (a >= 3 && a <= 8) b.set(cx + side * a, y + (a < 4 ? 0 : 1), P.condorWhite);
+        if (a >= 11 && (a & 1)) b.set(cx + side * a, y + 1, P.condor);
+        if (a >= 12 && !(a & 1)) b.set(cx + side * (a + 1), y - 1, P.condorMid);
+      }
+    }
+    b.ellipse(cx, cy + 1, 3, 2, P.condor);
+    b.set(cx + 3, cy, P.condorWhite); b.set(cx + 4, cy, P.condorWhite);
+    b.set(cx + 5, cy, P.condorHead); b.set(cx + 6, cy + 1, P.condorHead);
+    b.set(cx - 4, cy + 1, P.condorMid); b.set(cx - 5, cy + 2, P.condor);
     return b.toCanvas();
   }
 
-  // ---------------------------------------------------------------- 3. valle del Cusco
+  // ---------------------------------------------------------------- 2. cordilleras azul-verdes
   function buildMidFar(w) {
-    var b = new Buf(w, LOW_H), rng = makeRng(77), x, y, burning = [], smokes = [];
-    // colinas del fondo con andenes
-    for (x = 0; x < w; x++) {
-      var ta = Math.round(86 + fbm(x * 0.02, 51) * 14);
-      var terr = noise1(x * 0.015, 53) > 0.45;
-      for (y = ta; y < LOW_H; y++) {
-        var c = mix(P.valley[0], P.hillHaze, 0.42);
-        if (y === ta) c = mix(P.ichuRim, P.hillHaze, 0.45);
-        else if (terr && y - ta > 2) {
-          var rm = (y + Math.round(noise1(x * 0.06, 55) * 1.5)) % 3;
-          c = rm === 0 ? mix(P.andenJoint, P.hillHaze, 0.45) : mix(P.fields[Math.floor(y / 3) % P.fields.length], P.hillHaze, 0.42);
-        } else if (hash2(x, y, 9) < 0.18) c = mix(P.valley[2], P.hillHaze, 0.42);
+    var b = new Buf(w, LOW_H), rng = makeRng(77);
+    paintPeaks(b, peakList(rng, w, 205, [80, 110], 55, 100, [0.55, 0.6], null),
+      { seed: 51, jag: 12, pal: P.rangeA, haze: 0.1, hy0: 140, hy1: 210, hazeBot: 0.35 });
+    for (var k = 0; k < 10; k++)
+      paintCumulus(b, Math.round((k / 9) * w + (hash(k, 201) - 0.5) * 60), 172 + Math.round(hash(k, 202) * 14), 40 + hash(k, 203) * 60, 12 + hash(k, 204) * 12, 220 + k, 0.1, P.haze);
+    paintPeaks(b, peakList(rng, w, 228, [70, 90], 35, 72, [0.45, 0.5], null),
+      { seed: 61, jag: 10, pal: P.rangeB, haze: 0.03, hy0: 170, hy1: 240, hazeBot: 0.25, green: 196 });
+    paintPeaks(b, peakList(rng, w, 250, [60, 70], 20, 46, [0.35, 0.35], null),
+      { seed: 71, jag: 6, pal: P.rangeC, haze: 0.0, hy0: 210, hy1: 260, hazeBot: 0.12 });
+    // arbolitos y parcelas lejanas sobre las lomas verdes
+    for (var i = 0; i < w * 0.35; i++) {
+      var x = Math.floor(rng() * w), y = 214 + Math.floor(rng() * 40);
+      if (!b.has(x, y)) continue;
+      var c = b.get(x, y);
+      if (c[1] < c[2] + 5) continue;
+      b.set(x, y, P.tree[1]); b.set(x + 1, y, P.tree[0]); b.set(x, y - 1, P.tree[2]);
+    }
+    return { canvas: b.toCanvas(), smokes: [] };
+  }
+
+  // ---------------------------------------------------------------- 3. capa media (recorrido)
+  function paintTree(b, x, y, s, seed) {
+    for (var j = 0; j < s; j++) b.set(x, y - j, P.trunk);
+    var r = makeRng(seed), n = 3 + Math.floor(s / 2);
+    for (var k = 0; k < n; k++) {
+      var cx = x + (r() - 0.5) * s * 1.4, cy = y - s - (r() * s * 0.8), rr = s * (0.45 + r() * 0.3);
+      b.ellipse(cx, cy, rr, rr * 0.8, function (px, py, dx, dy) {
+        var l = -dx * 0.6 - dy * 0.8 + (hash2(px, py, seed) - 0.5) * 0.6;
+        return ramp(P.tree, 0.45 + l * 0.45, px, py);
+      });
+    }
+  }
+  // Andenes: bandas que siguen el contorno de la loma (pasto + muro de piedra con luz de tarde).
+  function paintTerraces(b, x0, x1, topFn, seed) {
+    var T = 13, WH = 5, top0 = topFn(x0);
+    for (var x = x0; x < x1; x++) {
+      var top = Math.round(topFn(x)), bend = Math.round((top - top0) * 0.6 + Math.sin(x * 0.021 + seed) * 2.2 + (fbm(x * 0.012, seed + 40) - 0.5) * 14);
+      for (var y = Math.max(0, top); y < LOW_H; y++) {
+        var d = y - top, yi = y - bend, k = Math.floor(yi / T), ph = yi - k * T, c;
+        if (d < 2) c = ramp(P.hill, 0.98 - d * 0.2, x, y);
+        else if (ph < T - WH) {
+          var base = 0.5 + (hash(k, seed) - 0.5) * 0.45 + (noise1(x * 0.05, seed + k) - 0.5) * 0.3;
+          var fv = ph === 0 ? base - 0.35 : ph === T - WH - 1 ? 1.05 : base + (ph < 3 ? -0.08 : 0.06);
+          c = ramp(P.field, fv, x, y);
+          if (ph > 0 && ph < T - WH - 1 && ((x + k * 3) % 6 === 0)) c = mix(c, P.hill[3], 0.35);
+          if (ph > 1 && hash2(x, y, seed + 3) < 0.05) c = P.hill[3];
+        } else {
+          var r = ph - (T - WH), row = k * 2 + (r > 1 ? 1 : 0), bw = 4 + Math.floor(hash(row, seed + 7) * 4);
+          var sh = hash(row, seed) * 20, bx = Math.floor((x + sh) / bw), edge = Math.floor((x - 1 + sh) / bw) !== bx;
+          c = P.terrWall[Math.floor(hash2(bx, row, seed) * P.terrWall.length)];
+          if (r === 0) c = P.terrWallLit;
+          else if (r === WH - 1) c = P.terrWallDk;
+          else if (edge) c = P.terrJoint;
+          else if (r === 1) c = mix(c, P.terrWallLit, 0.3);
+        }
+        if (d >= 2 && d < 5) c = mix(c, P.hill[5], 0.3);
         b.set(x, y, c);
       }
     }
-    // laderas laterales (más altas a los extremos del valle) con andenes
-    for (x = 0; x < w; x++) {
-      var u = x / w;
-      var bump = Math.max(smooth((0.2 - u) / 0.2), smooth((u - 0.62) / 0.25), 0.25 + 0.2 * noise1(x * 0.03, 61));
-      var tb = Math.round(114 - bump * 24 - fbm(x * 0.05, 63) * 6);
-      var terraced = noise1(x * 0.02, 65) > 0.35;
-      for (y = tb; y < LOW_H; y++) {
-        var cc;
-        if (y === tb) cc = mix(P.ichuRim, P.hillHaze, 0.25);
-        else if (terraced && y - tb > 1) {
-          var r2 = (y + Math.round(noise1(x * 0.05, 67) * 2)) % 4;
-          if (r2 === 0) cc = ((x >> 1) & 1) ? P.andenWall : P.andenJoint;
-          else if (r2 === 1) cc = P.andenShadow;
-          else cc = P.fields[(Math.floor(y / 4) + (x > w / 2 ? 1 : 0)) % P.fields.length];
-          cc = mix(cc, P.hillHaze, 0.22);
-        } else {
-          cc = P.ichu[Math.floor(hash2(x, y, 69) * 0.5 * P.ichu.length + noise1(x * 0.1, 70) * 0.5 * P.ichu.length) % P.ichu.length];
-          cc = mix(cc, P.hillHaze, 0.25);
-        }
-        b.set(x, y, cc);
-      }
-    }
-    // fondo del valle: chacras (parcelas)
-    for (x = 0; x < w; x++) {
-      var tv = 113 + Math.round(noise1(x * 0.05, 71) * 2);
-      for (y = tv; y < LOW_H; y++) {
-        var cell = hash2(Math.floor((x + y * 0.6) / 9), Math.floor(y / 3), 73);
-        var fc = P.valley[Math.floor(cell * P.valley.length)];
-        if (y === tv) fc = mix(fc, P.ichuRim, 0.4);
-        if ((y % 3 === 0) && hash2(x, y, 75) < 0.3) fc = mix(fc, P.andenJoint, 0.4);
-        b.set(x, y, mix(fc, P.hillHaze, 0.15));
-      }
-    }
-    // ciudad del Cusco: canchas de piedra con techos de ichu; algunos ardiendo (asedio de 1536)
-    var c0 = Math.floor(w * 0.18), c1 = Math.floor(w * 0.66), plaza0 = w * 0.37, plaza1 = w * 0.43;
-    for (y = 117; y < 121; y++) for (x = Math.floor(plaza0); x < plaza1; x++) b.set(x, y, mix(P.plaza, P.hillHaze, 0.12));
-    var rows = [114, 117, 120, 123, 126];
-    for (var r = 0; r < rows.length; r++) {
-      x = c0 + Math.floor(rng() * 4);
-      while (x < c1) {
-        if (x > plaza0 - 3 && x < plaza1 && r > 0 && r < 4) { x += 3; continue; }
-        var bw = 4 + Math.floor(rng() * 4), wh = 2 + (r > 2 ? 1 : 0) + Math.floor(rng() * 2), rh = 2 + Math.floor(rng() * 2);
-        var by = rows[r] + Math.floor(rng() * 2), burn = rng() < 0.2;
-        drawHouse(b, x, by, bw, wh, rh, burn, 0.14 - r * 0.02);
-        if (burn) burning.push({ x: x + (bw >> 1), y: by - wh - rh + 1 });
-        x += bw + 1 + Math.floor(rng() * 4);
-      }
-      // muros de cancha (recintos)
-      if (r === 2 || r === 4) for (x = c0; x < c1; x++) if (hash(x >> 3, 81 + r) < 0.6 && !(x > plaza0 - 3 && x < plaza1)) b.set(x, rows[r] + 2, mix(P.cityWallSh, P.hillHaze, 0.1));
-    }
-    // Qorikancha: recinto mayor con franja de oro
-    var qx = Math.floor(w * 0.5), qy = 125;
-    drawHouse(b, qx, qy, 13, 4, 3, false, 0.05);
-    for (x = qx + 1; x < qx + 12; x++) b.set(x, qy - 3, P.gold);
-    // humo: hasta 7 columnas repartidas
-    burning.sort(function (a, c) { return a.x - c.x; });
-    var step = Math.max(1, Math.floor(burning.length / 7));
-    for (var s = 0; s < burning.length; s += step) {
-      var e = burning[s];
-      smokes.push({ x: e.x, y: e.y, seed: hash(s, 91), speed: 0.11 + hash(s, 92) * 0.06, height: 30 + hash(s, 93) * 22, drift: -10 - hash(s, 94) * 10 });
-    }
-    b.haze(P.hazeFar, 0.24, 0.3);
-    return { canvas: b.toCanvas(), smokes: smokes, fires: burning };
   }
-  function drawHouse(b, x, by, bw, wh, rh, burn, haze) {
-    var y, i;
-    for (y = by - wh + 1; y <= by; y++) for (i = 0; i < bw; i++)
-      b.set(x + i, y, mix(i >= bw / 2 ? P.cityWall : P.cityWallSh, P.hillHaze, haze));
-    if (bw >= 5) b.set(x + 1, by, P.door);
-    for (var ry = 0; ry < rh; ry++) {
-      var rw = bw + 1 - ry * 2, rx = x - 0.5 + ry;
-      for (i = 0; i < rw; i++) {
-        var px = Math.round(rx + i), py = by - wh - ry;
-        var c = burn ? (hash2(px, py, 5) < 0.3 ? P.ember : P.burnt) : (i >= rw / 2 ? P.thatch : P.thatchSh);
-        b.set(px, py, mix(c, P.hillHaze, burn ? haze * 0.5 : haze));
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------- 4. Sacsayhuamán
-  function buildMid(w) {
-    var b = new Buf(w, LOW_H), x, y, i, rng = makeRng(303), smokes = [], banners = [];
-    var hillA = 131 - Math.sin(0.32 * 14) * 3;
-    function gTop(xx) {
-      var u = xx / w, base;
-      if (u < 0.32) base = 131 - Math.sin(u * 14) * 3 - 16 * Math.exp(-Math.pow((u - 0.12) / 0.06, 2));
-      else if (u < 0.58) { var k = smooth((u - 0.32) / 0.26); base = hillA * (1 - k) + 76 * k; }
-      else base = 76;
-      return Math.round(base - fbm(xx * 0.05, 301) * 5 + 2);
-    }
-    var tops = new Array(w);
-    for (x = 0; x < w; x++) tops[x] = gTop(x);
-
-    // ladera de ichu (puna) y andenes al inicio
-    for (x = 0; x < w; x++) {
-      var u = x / w, top = tops[x], terr = u < 0.27 && noise1(x * 0.03, 305) > 0.3;
-      for (y = top; y < LOW_H; y++) {
+  // Farallón rocoso con estratos, grietas y pasto en la cima. edgeR/edgeL(y): bordes hacia la quebrada.
+  function paintCliff(b, x0, x1, topFn, seed, edgeR, edgeL) {
+    for (var x = x0; x < x1; x++) {
+      var top = Math.round(topFn(x));
+      for (var y = Math.max(0, top); y < LOW_H; y++) {
+        var er = edgeR ? edgeR(y) : 1e9, el = edgeL ? edgeL(y) : -1e9;
+        if (x > er || x < el) continue;
         var d = y - top, c;
-        if (d === 0) c = P.ichuRim;
-        else if (d === 1) c = P.ichuRim2;
-        else if (terr && d >= 3) {
-          var rm = (y + Math.round(noise1(x * 0.05, 307) * 2)) % 6;
-          if (rm === 0) c = (hash((x + (Math.floor(y / 6) & 1) * 2) >> 2, 309) < 0.5) ? P.andenWall : mix(P.andenWall, P.stoneLight, 0.3);
-          else if (rm === 1) c = P.andenShadow;
-          else c = P.fields[(Math.floor(y / 6) + Math.floor(x / 90)) % P.fields.length];
-          if (rm > 1 && hash2(x, y, 311) < 0.08) c = mix(c, P.ichuDeep, 0.4);
-        } else {
-          var nn = hash2(x, y, 313) * 0.5 + noise1(x * 0.08, 315) * 0.5;
-          c = P.ichu[Math.floor(nn * P.ichu.length) % P.ichu.length];
-          c = mix(c, P.ichuDeep, Math.min(0.35, d / 50));
+        if (d < 3) c = ramp(P.hill, 0.9 - d * 0.18, x, y);
+        else if (d < 7 && hash(x, seed) < 0.6 - (d - 3) * 0.15) c = P.hill[2 + (hash(x, seed + 1) < 0.5 ? 1 : 0)];
+        else {
+          var strata = fbm2(x * 0.03, y * 0.25, seed), tx = fbm2(x * 0.18, y * 0.18, seed + 3);
+          var v = 0.42 + (strata - 0.5) * 0.7 + (tx - 0.5) * 0.4;
+          if (noise1(x * 0.3, seed + 5) > 0.84 && noise1(y * 0.2, seed + 6) > 0.3) v -= 0.35;
+          if (er - x < 10) v -= (10 - (er - x)) / 10 * 0.5;
+          if (x - el < 6) v += (6 - (x - el)) / 6 * 0.3;
+          if (x === Math.round(er)) v = 0;
+          c = ramp(P.cliff, v, x, y);
+          if (hash2(x, y, seed + 7) < 0.015) c = P.hill[3];
         }
         b.set(x, y, c);
       }
     }
-    // Qhapaq Ñan: camino inca que sube hacia la fortaleza
-    for (x = Math.floor(w * 0.02); x < Math.floor(w * 0.56); x++) {
-      var py = tops[x] + 5 + Math.round(Math.sin(x * 0.045) * 2.5 + 2.5);
-      if (py > 144) continue;
-      b.set(x, py, P.path); b.set(x, py + 1, P.path); b.set(x, py + 2, P.pathEdge);
-      if (Math.abs(tops[x + 1] - tops[x]) > 0 && (x & 1)) b.set(x, py, P.pathEdge);
-    }
-    // qollqas (depósitos) en hileras sobre la ladera
-    for (var row = 0; row < 2; row++) {
-      for (x = Math.floor(w * 0.37) + row * 6; x < w * 0.5; x += 13) {
-        var qy = tops[x] + 8 + row * 10;
-        if (qy > 143) continue;
-        drawQollqa(b, x, qy);
+  }
+  function paintPole(b, x, y0, y1) {
+    for (var y = y0; y <= y1; y++) { b.set(x, y, P.pole); b.set(x + 1, y, P.poleLt); }
+    b.ellipse(x + 1, y0 - 1, 1.6, 1.6, P.gold);
+  }
+  function paintTent(b, cx, by, w, h) {
+    var apex = by - h;
+    for (var y = apex; y <= by; y++) {
+      var t = (y - apex) / h, half = w / 2 * (0.12 + 0.88 * Math.pow(t, 0.8)) + (t > 0.85 ? (t - 0.85) * 8 : 0);
+      for (var x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
+        var u = (x - cx) / Math.max(1, half);
+        var v = 0.75 - u * 0.45 - t * 0.1;
+        if (Math.abs(Math.round(u * 4)) % 2 === 1 && Math.abs(u * 4 - Math.round(u * 4)) < 0.12) v -= 0.18;
+        var c = ramp(P.canvas, v, x, y);
+        if (Math.abs(y - (apex + h * 0.42)) < 1) c = P.flagR;
+        if (y === by) c = P.canvas[0];
+        b.set(x, y, c);
       }
     }
-    // muros en zigzag: tres terrazas de piedra poligonal
+    // entrada abierta
+    for (var j = 0; j < h * 0.45; j++) for (var i = -j * 0.35; i <= j * 0.12; i++) b.set(Math.round(cx + 2 + i), by - Math.round(h * 0.45) + j, j < 2 ? P.canvas[1] : P.wood[0]);
+    b.set(cx, apex - 1, P.pole); b.set(cx, apex - 2, P.pole); b.set(cx + 1, apex - 2, P.flagR); b.set(cx + 2, apex - 2, P.flagR);
+  }
+  function paintTower(b, cx, by) {
+    var platY = by - 64, i, y;
+    var legs = [[-11, 1], [11, 1], [-8, 0], [8, 0]];
+    legs.forEach(function (l) {
+      for (y = platY; y <= by; y++) {
+        var lx = Math.round(cx + l[0] + (l[0] < 0 ? -1 : 1) * (y - platY) * 0.06);
+        b.set(lx, y, l[1] ? P.wood[3] : P.wood[1]); b.set(lx + 1, y, l[1] ? P.wood[2] : P.wood[0]);
+      }
+    });
+    for (var s = platY + 4; s < by - 6; s += 18) {
+      b.line(cx - 11, s, cx + 11, s + 16, P.wood[2]); b.line(cx + 11, s, cx - 11, s + 16, P.wood[1]);
+      b.line(cx - 11, s, cx + 12, s, P.wood[3]);
+    }
+    // plataforma y barandilla de tablas
+    for (y = platY - 10; y <= platY; y++) for (i = -15; i <= 15; i++) {
+      var c = (i + 15) % 4 === 0 ? P.wood[1] : (i < 4 ? P.wood[3] : P.wood[2]);
+      if (y === platY - 10) c = P.wood[4];
+      if (y === platY) c = P.wood[0];
+      b.set(cx + i, y, c);
+    }
+    // techo a cuatro aguas
+    for (y = 0; y < 14; y++) {
+      var half = 2 + y * 1.35;
+      for (i = -half; i <= half; i++) b.set(Math.round(cx + i), platY - 26 + y, i < -half * 0.2 ? P.wood[2] : (((i + y) & 3) === 0 ? P.wood[0] : P.wood[1]));
+    }
+    for (i = -14; i <= 14; i += 7) for (y = platY - 13; y < platY - 10; y++) b.set(cx + i, y, P.wood[1]);
+    // escalera
+    for (y = platY; y < by; y++) { b.set(cx + 4, y, P.wood[3]); b.set(cx + 8, y, P.wood[3]); if (y % 4 === 0) b.line(cx + 4, y, cx + 8, y, P.wood[4]); }
+    paintPole(b, cx, platY - 52, platY - 26);
+    return { x: cx + 2, y: platY - 50 };
+  }
+  function paintBridge(b, x0, x1, y, riverY) {
+    var x, j;
+    // pilares y tornapuntas de madera
+    [0.3, 0.7].forEach(function (u) {
+      var px = Math.round(x0 + (x1 - x0) * u);
+      for (j = y + 3; j < riverY; j++) { b.set(px, j, P.wood[2]); b.set(px + 1, j, P.wood[1]); }
+      b.line(px, y + 4, px - 12, y + 18, P.wood[1]); b.line(px + 1, y + 4, px + 13, y + 18, P.wood[1]);
+    });
+    b.line(x0 + 2, y + 3, x0 + 14, y + 22, P.wood[1]); b.line(x1 - 2, y + 3, x1 - 14, y + 22, P.wood[1]);
+    for (x = x0; x <= x1; x++) {
+      b.set(x, y, (x % 3 === 0) ? P.wood[2] : P.wood[4]);
+      b.set(x, y + 1, (x % 3 === 0) ? P.wood[1] : P.wood[3]);
+      b.set(x, y + 2, P.wood[1]); b.set(x, y + 3, P.wood[0]);
+      var sag = Math.round(Math.sin((x - x0) / (x1 - x0) * Math.PI) * 2);
+      b.set(x, y - 7 + sag, P.wood[3]);
+      if ((x - x0) % 9 === 0) for (j = y - 7; j < y; j++) b.set(x, j, P.wood[2]);
+      if ((x - x0) % 3 === 0) b.set(x, y - 4 + sag, P.wood[1]);
+    }
+  }
+  // media anchura de la cascada (se abre al caer); la usan la capa estática y la animación
+  function fallHalf(yy) { return 8 * (0.45 + 0.55 * smooth(yy / 16)) + (noise1(yy * 0.3, 345) - 0.5) * 1.6; }
+  function paintWaterfall(b, x0, x1, y0, y1, seed) {
+    var cx = (x0 + x1) / 2;
+    for (var x = x0 - 6; x < x1 + 6; x++) { b.set(x, y0 - 1, P.cliff[1]); b.set(x, y0 - 2, P.hill[3]); }
+    for (var y = y0; y < y1; y++) {
+      var hw = fallHalf(y - y0);
+      for (var x = Math.round(cx - hw); x < Math.round(cx + hw); x++) {
+        var u = (x - (cx - hw)) / (2 * hw), streak = noise1(x * 0.8, seed) * 0.6 + noise2(x * 0.5, y * 0.08, seed) * 0.5;
+        var v = 0.45 + streak * 0.6 - Math.abs(u - 0.5) * 0.7;
+        b.set(x, y, ramp(P.water.slice(1), v, x, y));
+      }
+    }
+  }
+  function paintRiver(b, x0, x1, y0, y1, seed) {
+    for (var y = y0; y < y1; y++) for (var x = x0; x < x1; x++) {
+      var v = 0.3 + (y - y0) / (y1 - y0) * 0.3 + (noise2(x * 0.15, y * 0.6, seed) - 0.5) * 0.7;
+      var foam = noise2(x * 0.3, y * 1.1, seed + 3) > 0.72;
+      b.set(x, y, foam ? P.water[4] : ramp(P.water, v, x, y));
+    }
+  }
+
+  function buildMid(w) {
+    var b = new Buf(w, LOW_H), x, y, i, rng = makeRng(303), smokes = [], banners = [], incas = [], falls = [];
+    var gL = Math.round(w * 0.40), gc = Math.round(w * 0.505), cS = Math.round(w * 0.655);
+    var gapL = gc - 44, gapR = gc + 44, riverY = 206, deckY = 150;
+    // --- valle verde y ladera de fondo (todo el ancho)
+    for (x = 0; x < w; x++) {
+      var vt = Math.round(200 + (fbm(x * 0.02, 301) - 0.5) * 10);
+      for (y = vt; y < LOW_H; y++) {
+        var c = ramp(P.hill, 0.75 - (y - vt) * 0.03 + (fbm2(x * 0.06, y * 0.1, 302) - 0.5) * 0.5, x, y);
+        if (y === vt) c = P.hill[6];
+        b.set(x, y, c);
+      }
+    }
+    // --- 1. andenes en la ladera izquierda
+    var tx1 = Math.round(w * 0.27);
+    function tTop(xx) { var u = xx / tx1; return 40 + 170 * Math.pow(u, 1.25) - 14 * Math.exp(-Math.pow((u - 0.35) / 0.12, 2)) + (fbm(xx * 0.025, 305) - 0.5) * 12; }
+    paintTerraces(b, 0, tx1, tTop, 7);
+    for (i = 0; i < 30; i++) {
+      x = Math.floor(rng() * tx1 * 0.97);
+      var ty = Math.round(tTop(x)) + 4 + Math.floor(rng() * 70);
+      if (ty > 206) continue;
+      paintTree(b, x, ty, 3 + Math.floor(rng() * 3), 500 + i);
+    }
+    // estandarte inca del Inti (asta en el pie de los andenes)
+    var bx = Math.round(w * 0.165);
+    paintPole(b, bx, 112, 214);
+    incas.push({ x: bx + 2, y: 116 });
+    // --- 2. quebrada: ladera brumosa al fondo, cascada, río, farallones y puente
+    for (x = gapL - 60; x < gapR + 60; x++) {
+      var bt = Math.round(120 + Math.abs(x - gc) * 0.3 + (fbm(x * 0.05, 331) - 0.5) * 12);
+      for (y = bt; y < LOW_H; y++) {
+        var bc = ramp(P.hill, 0.62 - (y - bt) * 0.01 + (fbm2(x * 0.07, y * 0.09, 332) - 0.5) * 0.5, x, y);
+        if (y - bt > 5 && fbm2(x * 0.05, y * 0.12, 333) > 0.56) bc = ramp(P.cliff, 0.3 + (fbm2(x * 0.2, y * 0.2, 334) - 0.5), x, y);
+        b.set(x, y, mix(bc, P.rangeB[3], 0.4));
+      }
+    }
+    paintWaterfall(b, gc - 8, gc + 8, FALL_Y, riverY, 340);
+    falls.push({ x: gc - 8, y: FALL_Y });
+    paintRiver(b, gapL - 40, gapR + 40, riverY, LOW_H, 350);
+    for (i = 0; i < 40; i++) b.ellipse(gc + (rng() - 0.5) * 30, riverY - 1 + rng() * 4, 2 + rng() * 3, 1.5 + rng(), P.water[4 + (rng() < 0.5 ? 1 : 0)]);
+    function lcTop(xx) { return 150 + (fbm(xx * 0.08, 360) - 0.5) * 8 + Math.max(0, 14 - (xx - gL)) * 1.5; }
+    function rcTop(xx) { return 148 + (fbm(xx * 0.08, 370) - 0.5) * 8 + smooth((xx - (cS - 70)) / 60) * 46; }
+    paintCliff(b, gL - 10, gapL + 16, lcTop, 361, function (yy) { return gapL + 4 - (yy - deckY) * 0.1 + (noise1(yy * 0.3, 362) - 0.5) * 4; }, null);
+    paintCliff(b, gapR - 16, cS - 4, rcTop, 371, null, function (yy) { return gapR - 4 + (yy - deckY) * 0.1 + (noise1(yy * 0.3, 372) - 0.5) * 4; });
+    paintBridge(b, gapL - 8, gapR + 8, deckY, riverY);
+    for (i = 0; i < 6; i++) paintTree(b, gL + 6 + i * 18 + Math.floor(rng() * 8), Math.round(lcTop(gL + 6 + i * 18)) + 2, 3 + Math.floor(rng() * 3), 600 + i);
+    for (i = 0; i < 5; i++) { x = gapR + 14 + i * 22 + Math.floor(rng() * 8); if (x < cS - 60) paintTree(b, x, Math.round(rcTop(x)) + 2, 3 + Math.floor(rng() * 3), 650 + i); }
+    // --- 3. Sacsayhuamán: loma con muros en zigzag tras el campamento
+    for (x = cS - 50; x < w; x++) {
+      var ht = Math.round(150 - smooth((x - (cS - 50)) / 90) * 10 + (fbm(x * 0.011, 380) - 0.5) * 50 + (fbm(x * 0.05, 382) - 0.5) * 8);
+      if (x < cS) ht += (cS - x) * 1.2;
+      for (y = Math.max(ht, 0); y < 200; y++) {
+        var hc = ramp(P.hill, (y - ht < 2 ? 1 : 0.78) - (y - ht) * 0.012 + (fbm2(x * 0.08, y * 0.1, 381) - 0.5) * 0.45, x, y);
+        if (y - ht > 4 && fbm2(x * 0.04, y * 0.08, 383) > 0.6) hc = ramp(P.tree, 0.45 + (hash2(x, y, 384) - 0.5) * 0.6, x, y);
+        b.set(x, y, mix(hc, P.rangeB[3], 0.28));
+      }
+    }
     var tiers = [
-      { bot: 150, h: 27, P: 36, ph: 0, s: 0.44, f: 0.52, st: stoneStyle(5, 13, 5, 10, 2, 2) },
-      { bot: 117, h: 16, P: 30, ph: 9, s: 0.5, f: 0.57, st: stoneStyle(4, 10, 3, 7, 1, 1) },
-      { bot: 97, h: 13, P: 24, ph: 4, s: 0.54, f: 0.6, st: stoneStyle(3, 8, 3, 6, 1, 1) }
+      { bot: 198, h: 18, Pz: 28, ph: 0, st: stoneStyle(5, 12, 4, 8, 2, 1, 'sacsa') },
+      { bot: 177, h: 13, Pz: 22, ph: 9, st: stoneStyle(4, 9, 3, 6, 1, 1, 'sacsa') }
     ];
     tiers.forEach(function (T, ti) {
-      var x0 = Math.floor(w * T.s), ramp = function (xx) { return smooth((xx / w - T.s) / (T.f - T.s)); };
-      function zig(xx) { var z = (((xx + T.ph) % T.P) + T.P) % T.P / T.P; return z; }
-      var topFn = function (xx) {
-        var r = ramp(xx), z = zig(xx), c = Math.abs(z - 0.5) * 2;
-        return T.bot - T.h * r - Math.round(c * 5) + Math.round(noise1(xx * 0.3, 320 + ti) * 4 * (1 - r));
-      };
-      renderStones(b, x0, w, topFn, T.bot, T.st, 400 + ti * 17, function (xx, yy, col) {
+      var x0 = cS + 6 + ti * 16;
+      function zig(xx) { return ((((xx + T.ph) % T.Pz) + T.Pz) % T.Pz) / T.Pz; }
+      renderStones(b, x0, w, function (xx) {
+        var z = zig(xx), cc = Math.abs(z - 0.5) * 2, r = smooth((xx - x0) / 30);
+        return T.bot - T.h * r - Math.round(cc * 5);
+      }, T.bot, T.st, 400 + ti * 17, function (xx, yy, col) {
         var z = zig(xx);
-        if (z * T.P < 1) return mix(col, P.stoneLight, 0.35);                 // arista saliente
-        if (z >= 0.5) return mix(col, P.wallShade, 0.58);
-        if (z * T.P > T.P * 0.5 - 1) return mix(col, P.stoneJoint, 0.3);                      // cara en sombra
-        return mix(col, P.cloudWarm, 0.08);                                    // cara iluminada (tarde)
+        if (z * T.Pz < 1) return mix(col, P.sacsaLight, 0.3);
+        if (z >= 0.5) return mix(col, P.sacsaDark, 0.42);
+        return mix(col, P.sunGlow, 0.06);
       });
-      // sombra proyectada en la terraza bajo el muro superior
-      if (ti > 0) for (x = x0; x < w; x++) if (ramp(x) > 0.3) b.set(x, T.bot + 1, mix(b.get(x, T.bot + 1), P.stoneDeep, 0.4));
+      for (x = x0; x < w; x++) b.tint(x, T.bot + 1, P.hill[0], 0.4);
     });
-    // portadas trapezoidales (tipo Tiopuncu) en el muro inferior
-    [0.66, 0.84].forEach(function (u) { drawGate(b, Math.floor(w * u), 146); });
-    // torres en la cima: Sallaq Marka (rect), Muyuq Marka (redonda), Paucar Marka
-    drawRectTower(b, Math.floor(w * 0.74), 79, 14, 18, 501);
-    smokes.push({ x: Math.floor(w * 0.74) + 7, y: 60, seed: 0.3, speed: 0.09, height: 42, drift: -14 });
-    drawRoundTower(b, Math.floor(w * 0.86), 80, 9, 24);
-    smokes.push({ x: Math.floor(w * 0.86), y: 56, seed: 0.7, speed: 0.08, height: 50, drift: -16 });
-    drawRectTower(b, Math.floor(w * 0.95), 79, 11, 13, 507);
-    // astas de las banderas españolas (las telas se animan por frame)
-    [0.67, 0.8, 0.92, 0.985].forEach(function (u, k) {
-      var bx = Math.floor(w * u), by = k % 2 ? 97 - 13 : 76;
-      if (k === 0) by = 117 - 16;
-      for (y = by - 15; y <= by; y++) b.set(bx, y, P.pole);
-      b.set(bx, by - 16, P.gold);
-      banners.push({ x: bx + 1, y: by - 15 });
+    // --- 4. campamento español: empalizada, tiendas, torre y estandartes
+    var cw = w - cS;
+    for (x = cS + 8; x < w; x++) {
+      if (((x - cS) % 140) > 100) continue;
+      var stake = (x % 3), hh = 13 + Math.round(hash(x >> 1, 390) * 3);
+      if (stake === 2) continue;
+      for (y = 214 - hh; y < 214; y++) b.set(x, y, y === 214 - hh ? P.wood[4] : (stake ? P.wood[1] : P.wood[3]));
+    }
+    for (x = cS + 8; x < w; x++) if (((x - cS) % 140) <= 100) { b.set(x, 203, P.wood[0]); b.set(x, 209, P.wood[0]); }
+    var tentXs = [0.1, 0.2, 0.31, 0.7, 0.8, 0.92];
+    tentXs.forEach(function (u, k) { paintTent(b, Math.round(cS + cw * u), 206 - (k % 2) * 3, 26 + (k % 3) * 6, 24 + (k % 2) * 6); });
+    var tower = paintTower(b, Math.round(cS + cw * 0.52), 212);
+    banners.push({ x: tower.x, y: tower.y });
+    [0.42, 0.62, 0.985].forEach(function (u, k) {
+      var px = Math.round(cS + cw * u), top = 128 + k * 6;
+      paintPole(b, px, top, 212);
+      banners.push({ x: px + 2, y: top + 2 });
     });
-    // árboles nativos: queñua y molle (sin eucaliptos)
-    var trees = [];
-    for (i = 0; i < 26; i++) {
-      var u2 = rng() * 0.56;
-      x = Math.floor(u2 * w);
-      var room = 143 - tops[x] - 4;
-      if (room < 2) continue;
-      trees.push({ x: x, y: tops[x] + 3 + Math.floor(rng() * Math.min(18, room)), molle: rng() < 0.45 });
-    }
-    trees.push({ x: Math.floor(w * 0.6), y: 115, molle: true });
-    trees.push({ x: Math.floor(w * 0.71), y: 96, molle: false });
-    trees.sort(function (a, c) { return a.y - c.y; });
-    trees.forEach(function (t) { if (t.molle) drawMolle(b, t.x, t.y, rng); else drawQuenua(b, t.x, t.y, rng); });
-    // matas de ichu
-    for (i = 0; i < w * 0.9; i++) {
-      x = Math.floor(rng() * w);
-      var ty = tops[x] + 2 + Math.floor(rng() * 30);
-      if (ty > 145 || x / w > 0.45 && ty > tops[x] + 4) continue;
-      var lc = rng() < 0.5 ? P.tuft : P.tuftSh;
-      b.set(x, ty, lc); b.set(x - 1, ty - 1, lc); b.set(x + 1, ty - 1, lc); b.set(x, ty - 2, P.tuft);
-    }
-    b.haze(P.hazeMid, 0.2, 0.3);
-    return { canvas: b.toCanvas(), smokes: smokes, banners: banners };
-  }
-  function drawQollqa(b, x, y) {
-    // depósito circular: muro de 7×4 con sombra a la izquierda, puerta y techo cónico de ichu
-    var i, j;
-    for (j = 0; j < 4; j++) for (i = 0; i < 7; i++) b.set(x + i, y - j, i >= 4 ? P.cityWall : (i === 0 ? P.stoneDark : P.cityWallSh));
-    b.set(x + 3, y, P.door); b.set(x + 3, y - 1, P.door);
-    var widths = [9, 7, 5, 3, 1];
-    for (j = 0; j < widths.length; j++) for (i = 0; i < widths[j]; i++) {
-      var px = x + 3 - (widths[j] >> 1) + i;
-      b.set(px, y - 4 - j, j === 0 ? P.thatchSh : (px >= x + 3 ? P.thatch : P.thatchSh));
-    }
-  }
-  function drawGate(b, cx, by) {
-    var hgt = 15, y;
-    for (y = 0; y < hgt; y++) {
-      var half = Math.round(4 - y * 1.2 / hgt * 1.5);
-      for (var i = -half; i <= half; i++) b.set(cx + i, by - y, y > hgt - 3 ? P.stoneJoint : P.door);
-    }
-    for (var k = -6; k <= 6; k++) { b.set(cx + k, by - hgt - 1, P.stoneLight); b.set(cx + k, by - hgt, P.stone[1]); b.set(cx + k, by - hgt + 1, P.stoneDark); }
-  }
-  function drawRectTower(b, cx, by, tw, th, seed) {
-    var x0 = cx - (tw >> 1);
-    renderStones(b, x0, x0 + tw, function (xx) { return by - th + Math.round(hash(xx, seed) * 2); }, by, stoneStyle(3, 5, 2, 3, 1, 0), seed,
-      function (xx, yy, c) { return xx > cx ? mix(c, P.wallShade, 0.3) : c; });
-    for (var k = 0; k < 2; k++) { var wx = x0 + 3 + k * (tw - 7); b.set(wx, by - th + 5, P.door); b.set(wx + 1, by - th + 5, P.door); b.set(wx, by - th + 6, P.door); b.set(wx + 1, by - th + 6, P.door); b.set(wx - 0, by - th + 4, P.door); }
-    // techo de ichu quemado
-    for (var j = 0; j < 4; j++) for (var i = -(tw >> 1) - 1 + j; i <= (tw >> 1) + 1 - j; i++)
-      b.set(cx + i, by - th - 1 - j, hash2(i, j, seed) < 0.35 ? P.ember : (i > 0 ? P.thatchSh : P.burnt));
-  }
-  function drawRoundTower(b, cx, by, r, th) {
-    for (var y = by - th; y <= by; y++) {
-      var ragged = y - (by - th) < 3;
-      for (var dx = -r; dx <= r; dx++) {
-        if (ragged && hash(dx + 40, 611 + y) < 0.5) continue;
-        var n = dx / r, course = Math.floor((by - y) / 2), off = (course & 1) * 2;
-        var joint = (by - y) % 2 === 0 || Math.round(n * 6 + off) % 4 === 0 && Math.abs(n) < 0.9;
-        var lum = clamp(0.55 - 0.5 * n - n * n * 0.3, 0, 1);
-        var c = mix(P.stoneDeep, mix(P.stone[2], P.stoneLight, 0.4), lum);
-        if (joint) c = mix(c, P.stoneJoint, 0.55);
-        if (Math.abs(n) > 0.92) c = mix(c, P.stoneJoint, 0.4);
-        b.set(cx + dx, y, c);
-      }
-    }
-    // borde superior en ruinas: interior oscuro visto en elipse
-    for (var ex = -r + 2; ex <= r - 2; ex++) if (hash(ex + 40, 611 + by - th + 3) >= 0.5) b.set(cx + ex, by - th + 3, P.stoneJoint);
-    // ventanas trapezoidales
-    [[-3, 8], [3, 8], [0, 15]].forEach(function (p) { for (var j = 0; j < 3; j++) { b.set(cx + p[0], by - th + p[1] + j, P.door); if (j > 0) b.set(cx + p[0] + 1, by - th + p[1] + j, P.door); } });
-  }
-  function drawQuenua(b, x, y) {
-    var trunk = [[0, 0], [0, -1], [1, -2], [0, -3], [-1, -4], [1, -4], [2, -5]];
-    trunk.forEach(function (p, i) { b.set(x + p[0], y + p[1], i & 1 ? P.tTrunkSh : P.tTrunk); });
-    [[-2, -6, 2.6, 1.6], [2, -7, 2.6, 1.7], [0, -8.5, 2.2, 1.5]].forEach(function (cl) {
-      b.ellipse(x + cl[0], y + cl[1], cl[2], cl[3], function (px, py, dx, dy) {
-        return dy < -0.3 && dx > -0.2 ? P.qLeaf[0] : (dy > 0.4 ? P.qLeaf[2] : P.qLeaf[1]);
-      });
-    });
-  }
-  function drawMolle(b, x, y, rng) {
-    for (var j = 0; j < 4; j++) b.set(x, y - j, P.mTrunk);
-    b.set(x - 1, y - 4, P.mTrunk); b.set(x + 1, y - 4, P.mTrunk);
-    b.ellipse(x, y - 7, 5.2, 3, function (px, py, dx, dy) {
-      return dy < -0.35 && dx > -0.3 ? P.mLeaf[0] : (dy > 0.45 ? P.mLeaf[2] : P.mLeaf[1]);
-    });
-    // ramas colgantes (molle llorón) y bayas rosadas
-    for (var i = -5; i <= 5; i++) if (hash(i + x, 707) < 0.55) {
-      var len = 1 + Math.floor(hash(i + x, 708) * 3);
-      for (var k = 1; k <= len; k++) b.set(x + i, y - 5 + k, P.mLeaf[2]);
-    }
-    for (var n = 0; n < 4; n++) b.set(x - 3 + Math.floor(rng() * 7), y - 8 + Math.floor(rng() * 4), P.berry);
+    smokes.push({ x: Math.round(cS + cw * 0.37), y: 196, seed: 0.3, speed: 0.09, height: 60, drift: -22 });
+    smokes.push({ x: Math.round(cS + cw * 0.86), y: 192, seed: 0.7, speed: 0.08, height: 70, drift: -26 });
+    b.haze(P.haze, 0.03, 0.05);
+    return { canvas: b.toCanvas(), smokes: smokes, banners: banners, incas: incas, falls: falls };
   }
 
   // ---------------------------------------------------------------- suelo y plataformas
-  var GROUND_STRIP_W = 512, GROUND_MARGIN = 5;
-  function buildGroundStrip(hl) {
-    var Wd = GROUND_STRIP_W, M = GROUND_MARGIN, b = new Buf(Wd, hl + M), x, y, rng = makeRng(901);
-    var TAU = Math.PI * 2;
-    for (x = 0; x < Wd; x++) {
-      var gd = 3 + Math.floor(noise1(x * 0.12, 903, Math.round(Wd * 0.12)) * 3);
-      var s1 = 14 + Math.round(Math.sin(TAU * x / Wd * 3) * 2), s2 = 26 + Math.round(Math.sin(TAU * x / Wd * 5 + 1) * 2);
-      for (y = 0; y < hl; y++) {
-        var c;
-        if (y === 0) c = P.grassRim;
-        else if (y < gd) c = P.grass[Math.floor(hash2(x, y, 905) * P.grass.length)];
-        else if (y < gd + 2 && hash2(x, y, 907) < 0.45) c = P.grass[3];
-        else {
-          var n = hash2(x, y, 909);
-          c = n < 0.3 ? P.earth[0] : n < 0.8 ? P.earth[1] : P.earth[2];
-          if (y === s1 || y === s2) c = P.earthDark;
-          var deep = clamp(y / hl, 0, 1) * 0.55;
-          c = mix(c, P.earthDeep, Math.floor(deep * 4 + bayer(x, y)) / 4);
-        }
-        b.set(x, y + M, c);
+  var GROUND_STRIP_W = 512, GROUND_MARGIN = 8, FALL_Y = 126, FALL_H = 206 - FALL_Y;
+  function grassLip(b, x0, x1, y0, seed, deep) {
+    for (var x = x0; x < x1; x++) {
+      var hang = 2 + Math.floor(noise1(x * 0.25, seed, Math.round((x1 - x0) * 0.25)) * (deep || 4));
+      if (hash(x, seed + 1) < 0.12) hang += 2;
+      for (var j = 0; j <= hang; j++) {
+        var v = 1 - j / (hang + 1);
+        b.set(x, y0 + j, j === 0 ? P.grass[0] : ramp(P.grass.slice(1, 5), v, x, y0 + j));
       }
     }
-    // piedrecitas
-    for (var k = 0; k < 70; k++) {
-      x = Math.floor(rng() * (Wd - 3)); y = M + 5 + Math.floor(rng() * Math.max(1, hl - 8));
-      var pw = 2 + Math.floor(rng() * 2), ph = 1 + Math.floor(rng() * 2);
-      b.fill(x, y, pw, ph, P.pebble); b.set(x, y, P.stoneLight); b.fill(x, y + ph, pw, 1, P.pebbleSh);
+  }
+  function tufts(b, x0, x1, baseY, seed, density) {
+    var r = makeRng(seed);
+    for (var x = x0 + 2; x < x1 - 3; x += 2 + Math.floor(r() * density)) {
+      var n = 2 + Math.floor(r() * 3);
+      for (var k = 0; k < n; k++) {
+        var hgt = 3 + Math.floor(r() * 6), lean = (k - (n - 1) / 2) * 0.5 + (r() - 0.5) * 0.4;
+        var col = k % 3 === 0 ? P.tuft : k % 3 === 1 ? P.tuftSh : P.grass[1];
+        for (var j = 1; j <= hgt; j++) b.set(x + k + Math.round(lean * j * 0.6), baseY - j, j > hgt - 2 ? P.grass[0] : col);
+      }
     }
-    // matas de ichu sobresaliendo del borde
-    for (x = 2; x < Wd - 3; x += 6 + Math.floor(rng() * 12)) {
-      var hgt = 2 + Math.floor(rng() * 4), col = rng() < 0.5 ? P.tuft : P.tuftSh;
-      for (var j = 1; j <= hgt; j++) { b.set(x, M - j, col); if (j < hgt - 1) { b.set(x - Math.ceil(j / 2), M - j + 1, P.tuftSh); b.set(x + Math.ceil(j / 2), M - j + 1, col); } }
-    }
+  }
+  function buildGroundStrip(hl) {
+    var Wd = GROUND_STRIP_W, M = GROUND_MARGIN, b = new Buf(Wd, hl + M);
+    // muro de piedra inca (bloques grandes) — se repite cada Wd sin costura visible
+    renderStones(b, 0, Wd, function () { return M + 2; }, hl + M - 1, stoneStyle(9, 20, 7, 13, 2, 2), 905, function (xx, yy, c) {
+      return mix(c, P.stoneDark, Math.floor(clamp((yy - M) / hl, 0, 1) * 0.5 * 4 + bayer(xx, yy)) / 4);
+    });
+    for (var y = M + 2; y < hl + M; y++) b.set(0, y, P.stoneJoint);
+    grassLip(b, 0, Wd, M, 907, 5);
+    tufts(b, 0, Wd, M, 909, 9);
     return b.toCanvas();
   }
   function buildPlatform(cw, ch, seed) {
-    // Capa jugable: piedra más cálida y clara que los muros del fondo (que llevan bruma),
-    // contorno oscuro de 1 px (3 px en pantalla) y labio superior iluminado con pasto.
-    var b = new Buf(cw, ch);
-    renderStones(b, 1, cw - 1, function () { return 2; }, ch - 1, stoneStyle(4, 9, 3, 6, 1, 1), seed, function (xx, yy, c) {
-      c = mix(c, P.platWarm, 0.22);
-      return mix(c, P.stoneDeep, Math.floor(clamp(yy / ch, 0, 1) * 0.45 * 4 + bayer(xx, yy)) / 4);
+    // Capa jugable: muro de piedra poligonal oscuro con contorno, arista superior iluminada y pasto.
+    var M = 6, b = new Buf(cw, ch + M);
+    renderStones(b, 1, cw - 1, function () { return M + 1; }, ch + M - 1, stoneStyle(7, 15, 6, 11, 1, 1), seed, function (xx, yy, c) {
+      return mix(c, P.stoneDark, Math.floor(clamp((yy - M) / ch, 0, 1) * 0.45 * 4 + bayer(xx, yy)) / 4);
     });
-    for (var x = 0; x < cw; x++) {
-      b.set(x, 0, P.platOutline);
-      b.set(x, 1, hash(x, seed) < 0.3 ? P.grassRim : P.stoneLight);
-      b.set(x, 2, mix(P.stone[2], P.stoneLight, 0.55));
-      b.set(x, 3, mix(b.get(x, 3), P.stoneLight, 0.2));
-      b.set(x, ch - 1, P.platOutline);
-    }
-    for (var y = 0; y < ch; y++) {
+    for (var y = M; y < ch + M; y++) {
       b.set(0, y, P.platOutline); b.set(cw - 1, y, P.platOutline);
-      if (y > 1 && y < ch - 1) { b.set(1, y, mix(b.get(1, y), P.stoneLight, 0.35)); b.set(cw - 2, y, mix(b.get(cw - 2, y), P.stoneJoint, 0.45)); }
+      if (y > M + 1) { b.tint(1, y, P.stoneLight, 0.35); b.tint(cw - 2, y, P.stoneJoint, 0.45); }
     }
-    // matas de ichu en el borde superior (no tapan la cara de colisión: se dibujan sobre y=1)
-    for (x = 3; x < cw - 3; x += 7 + Math.floor(hash(x, seed + 3) * 9)) { b.set(x, 1, P.tuft); b.set(x + 1, 1, P.tuftSh); }
+    for (var x = 0; x < cw; x++) { b.set(x, M, P.platOutline); b.set(x, ch + M - 1, P.platOutline); }
+    grassLip(b, 1, cw - 1, M, seed + 5, 3);
+    tufts(b, 1, cw - 1, M, seed + 9, 10);
     return b.toCanvas();
   }
 
   // ---------------------------------------------------------------- caché
-  var cache = null, groundCache = {}, platCache = {}, lastScale = 3;
+  var cache = null, groundCache = {}, platCache = {}, lastScale = 2;
   function prepare(opts) {
     opts = opts || EMPTY_OPTS;
     var W = opts.width || 960, H = opts.height || 540, L = opts.levelLength || 4200;
@@ -690,12 +766,11 @@
     var mf = buildMidFar(layerW(PARALLAX.midfar)), mid = buildMid(layerW(PARALLAX.mid));
     cache = {
       key: key, W: W, H: H, L: L, S: S, lw: lw, range: range,
-      sky: buildSky(lw),
-      clouds: [buildCloud(3, 46, 12), buildCloud(5, 30, 9), buildCloud(8, 62, 14), buildCloud(13, 24, 7), buildCloud(21, 40, 10)],
-      condor: [buildCondor(0), buildCondor(1)],
+      clouds: [buildCloudSprite(3, 64, 22), buildCloudSprite(5, 44, 16), buildCloudSprite(8, 80, 26)],
+      condor: [buildCondor(0), buildCondor(1), buildCondor(2)],
       far: buildFar(layerW(PARALLAX.far)),
-      midfar: mf.canvas, mfSmokes: mf.smokes, mfFires: mf.fires,
-      mid: mid.canvas, midSmokes: mid.smokes, banners: mid.banners
+      midfar: mf.canvas,
+      mid: mid.canvas, midSmokes: mid.smokes, banners: mid.banners, incas: mid.incas, falls: mid.falls
     };
     lastScale = S;
     return cache;
@@ -715,39 +790,91 @@
       var size = 2 + Math.floor(a * 4);
       var dx = Math.round(a * a * em.drift + Math.sin(t * 0.8 + i * 1.7 + em.seed * 6) * 1.5 * a - size / 2);
       var dy = Math.round(-a * em.height - size / 2);
-      ctx.globalAlpha = (1 - a) * 0.7;
+      ctx.globalAlpha = (1 - a) * 0.6;
       var puff = animated.smoke[Math.min(3, Math.floor(a * 4))][size - 2];
       ctx.drawImage(puff, sx + dx * S, sy + (dy - 1) * S, size * S, (size + 1) * S);
     }
     ctx.globalAlpha = 1;
   }
-  function rasterBanner(ctx, sx, sy, S, t, k) {
-    // Cruz de Borgoña: aspa roja irregular sobre blanco (estandarte de los Austrias)
-    for (var c = 0; c < 8; c++) {
-      var wave = Math.round(Math.sin(t * 4 + c * 0.8 + k) * 0.8 * (c / 7));
-      for (var r = 0; r < 5; r++) {
-        if (c === 7 && (r === 0 || r === 4) && Math.sin(t * 5 + k) > 0) continue;
-        var d1 = Math.abs(r - c * 4 / 7), d2 = Math.abs(r - (4 - c * 4 / 7));
-        var col = d1 < 0.7 || d2 < 0.7 ? P.flagR : (wave < 0 ? P.flagWSh : P.flagW);
+  // Cruz de Borgoña: aspa roja de troncos nudosos sobre blanco (estandarte de los Austrias)
+  function rasterBanner(ctx, ph) {
+    var Wf = 14, Hf = 20;
+    for (var c = 0; c < Wf; c++) {
+      var wave = Math.sin(ph + c * 0.55) * 1.2 * (c / (Wf - 1));
+      var wy = Math.round(wave);
+      for (var r = 0; r < Hf; r++) {
+        if (c === Wf - 1 && (r % 5 === 0) && Math.sin(ph * 1.3) > 0) continue;
+        var u = c / (Wf - 1), v = r / (Hf - 1);
+        var d1 = Math.abs(v - u), d2 = Math.abs(v - (1 - u));
+        var knot = (Math.floor(r / 3) % 2) ? 0.02 : 0;
+        var red = d1 < 0.085 + knot || d2 < 0.085 + knot;
+        var shade = Math.cos(ph + c * 0.55) < -0.3;
+        var col = red ? (shade ? P.flagRSh : P.flagR) : (shade ? P.flagWSh : P.flagW);
         ctx.fillStyle = css(col);
-        ctx.fillRect(sx + c * S, sy + (r + wave) * S, S, S);
+        ctx.fillRect(c, r + wy + 2, 1, 1);
       }
+    }
+  }
+  // Estandarte inca: paño rojo con borde de oro y el Inti (sol de oro con rayos)
+  function rasterInca(ctx, ph) {
+    var Wf = 22, Hf = 32, cx = 10.5, cy = 13;
+    for (var c = 0; c < Wf; c++) {
+      var sway = Math.sin(ph + c * 0.3) * 0.8 * (c / Wf);
+      for (var r = 0; r < Hf; r++) {
+        var bottomCut = r > Hf - 4 && Math.abs(c - (Wf - 1) / 2) < (r - (Hf - 4)) * 2.2;
+        if (bottomCut) continue;
+        var dx = c - cx, dy = r - cy, d = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dy, dx);
+        var col = P.incaR;
+        if (c === 0 || c === Wf - 1 || r === 0) col = P.goldSh;
+        else if (c === 1 || c === Wf - 2 || r === 1) col = P.gold;
+        else if (r > Hf - 7 && r < Hf - 5) col = P.gold;
+        else if (d < 4.2) col = d < 1.5 ? P.goldLt : P.gold;
+        else if (d < 5.2) col = P.goldSh;
+        else if (d < 8.5 && Math.cos(a * 12) > 0.35 - (d - 5) * 0.08) col = d < 7 ? P.gold : P.goldSh;
+        else if (Math.sin(ph + c * 0.3) < -0.4) col = P.incaRSh;
+        else if (c < 4) col = P.incaRLt;
+        if (d < 3.6 && (Math.abs(dy + 0.8) < 0.6 && Math.abs(Math.abs(dx) - 1.4) < 0.6)) col = P.goldSh; // ojos del Inti
+        if (d < 3.6 && Math.abs(dy - 1.6) < 0.5 && Math.abs(dx) < 1.3) col = P.goldSh; // boca
+        ctx.fillStyle = css(col);
+        ctx.fillRect(c, Math.round(r + sway) + 1, 1, 1);
+      }
+    }
+    ctx.fillStyle = css(P.pole); ctx.fillRect(0, 0, Wf, 1);
+  }
+  function rasterFall(ctx, w, h, ph) {
+    for (var x = 0; x < w; x++) for (var y = 0; y < h; y++) {
+      var hw = fallHalf(y);
+      if (x < Math.round(w / 2 - hw) || x >= Math.round(w / 2 + hw)) continue;
+      var v = hash2(x, Math.floor((((y - ph * h / 6) % h) + h) % h / 3), 77);
+      if (v > 0.78) { ctx.fillStyle = css(v > 0.92 ? P.water[5] : P.water[4]); ctx.fillRect(x, y, 1, 1); }
+    }
+    for (x = 0; x < w; x++) {
+      var m = hash2(x, ph, 79);
+      if (m > 0.35) { ctx.fillStyle = css(m > 0.7 ? P.water[5] : P.water[4]); ctx.fillRect(x, h - 3 + Math.round(m * 3), 1, 1); }
     }
   }
 
   var animated = null;
+  var FG_W = 960, FG_H = 24;
   function prepareAnimated() {
     if (animated) return animated;
-    var a = { banners: [], foreground: [], smoke: [], fire: [] };
+    var a = { banners: [], incas: [], falls: [], foreground: [], smoke: [] };
     for (var phase = 0; phase < 12; phase++) {
-      var banner = makeCanvas(10, 8), bc = banner.getContext('2d');
-      if (bc) rasterBanner(bc, 0, 1, 1, phase / 12 * Math.PI * 2 / 4, 0);
+      var ph = phase / 12 * Math.PI * 2;
+      var banner = makeCanvas(14, 24), bc = banner.getContext('2d');
+      if (bc) rasterBanner(bc, ph);
       a.banners.push(banner);
-      var fg = makeCanvas(1408, LOW_H), fc = fg.getContext('2d');
-      if (fc) rasterForeground(fc, 0, phase / 12 * Math.PI * 2 / 1.6, { width: 1408, height: LOW_H });
-      var strip = makeCanvas(1408, 14), stripCtx = strip.getContext('2d');
-      if (stripCtx) stripCtx.drawImage(fg, 0, LOW_H - 14, 1408, 14, 0, 0, 1408, 14);
-      a.foreground.push(strip);
+      var inca = makeCanvas(22, 34), ic = inca.getContext('2d');
+      if (ic) rasterInca(ic, ph);
+      a.incas.push(inca);
+      var fg = makeCanvas(FG_W, FG_H), fc = fg.getContext('2d');
+      if (fc) rasterForeground(fc, ph / 1.6, FG_W, FG_H);
+      a.foreground.push(fg);
+    }
+    for (var f = 0; f < 6; f++) {
+      var fall = makeCanvas(16, FALL_H + 4), fl = fall.getContext('2d');
+      if (fl) rasterFall(fl, 16, FALL_H, f);
+      a.falls.push(fall);
     }
     for (var tone = 0; tone < 4; tone++) {
       var row = [];
@@ -758,25 +885,52 @@
       }
       a.smoke.push(row);
     }
-    for (var f = 0; f < 2; f++) {
-      var fire = makeCanvas(1, 1), fireCtx = fire.getContext('2d');
-      if (fireCtx) { fireCtx.fillStyle = css(f ? P.fire2 : P.fire1); fireCtx.fillRect(0, 0, 1, 1); }
-      a.fire.push(fire);
-    }
     animated = a;
     return a;
   }
-  function drawBanner(ctx, sx, sy, S, t, k) {
-    var a = prepareAnimated(), phase = Math.floor((t * 4 + k) / (Math.PI * 2) * 12);
-    var cv = a.banners[((phase % 12) + 12) % 12];
-    ctx.drawImage(cv, sx, sy - S, cv.width * S, cv.height * S);
+  function phaseOf(t, speed, k) { var p = Math.floor((t * speed + k) / (Math.PI * 2) * 12); return ((p % 12) + 12) % 12; }
+
+  // primer plano: pasto meciéndose, piedras y cantutas (tira pre-renderizada a resolución interna)
+  function rasterForeground(ctx, t, Wd, Hh) {
+    var sp = 9;
+    for (var k = -2; k * sp < Wd + 20; k++) {
+      var id = ((k % 107) + 107) % 107;
+      if (hash(id, 77) > 0.62) continue;
+      var type = hash(id, 78), bx = Math.round(k * sp + hash(id, 79) * 6);
+      bx = ((bx % Wd) + Wd) % Wd;
+      if (type < 0.7) {
+        var n = 4 + Math.floor(hash(id, 80) * 5), sway = Math.sin(t * 1.6 + id * 0.7) * 1.4 + Math.sin(t * 3.2 + id) * 0.4;
+        for (var bl = 0; bl < n; bl++) {
+          var lean = (bl - (n - 1) / 2) * 0.5, len = 8 + Math.floor(hash(id * 31 + bl, 81) * 12) - Math.abs(Math.round(lean * 2));
+          for (var s = 1; s <= len; s++) {
+            var px = bx + Math.round(lean * s * 0.5 + sway * (s / len) * (s / len));
+            ctx.fillStyle = css(P.fgGrass[Math.min(4, Math.floor((s / len) * 4 + (bl % 2)))]);
+            for (var dup = 0; dup < 2; dup++) ctx.fillRect(((px + dup * Wd) % Wd + Wd) % Wd, Hh - s, 1, 1);
+          }
+        }
+      } else if (type < 0.86) {
+        var sw = 5 + Math.floor(hash(id, 82) * 6);
+        ctx.fillStyle = css(P.fgStone); ctx.fillRect(bx, Hh - 4, sw, 4); ctx.fillRect(bx + 1, Hh - 5, sw - 2, 1);
+        ctx.fillStyle = css(P.fgStoneLit); ctx.fillRect(bx + 1, Hh - 5, sw - 3, 1); ctx.fillRect(bx, Hh - 4, 1, 2);
+      } else {
+        var sh = 10 + Math.floor(hash(id, 83) * 6), sv = Math.round(Math.sin(t * 1.6 + id) * 0.8);
+        ctx.fillStyle = css(P.fgStem);
+        ctx.fillRect(bx, Hh - sh, 1, sh);
+        ctx.fillRect(bx + sv + 1, Hh - (sh - 2), 1, 1);
+        ctx.fillRect(bx - 1, Hh - (sh - 4), 1, 1);
+        for (var fl = 0; fl < 3; fl++) {
+          var fx = bx + (fl - 1) * 2 + sv, fy = Hh - (sh - fl * 2 - 1);
+          ctx.fillStyle = css(P.cantuta[fl % 3]); ctx.fillRect(fx, fy, 1, 3);
+          ctx.fillStyle = css(P.cantutaTip); ctx.fillRect(fx, fy + 3, 1, 1);
+        }
+      }
+    }
   }
   function drawForeground(ctx, cameraX, timeSeconds, opts) {
     opts = opts || EMPTY_OPTS;
     var W = opts.width || ctx.canvas.width || 960, H = opts.height || ctx.canvas.height || 540;
     var S = H / LOW_H, a = prepareAnimated();
-    var phase = Math.floor((timeSeconds || 0) * 1.6 / (Math.PI * 2) * 12);
-    var cv = a.foreground[((phase % 12) + 12) % 12];
+    var cv = a.foreground[phaseOf(timeSeconds || 0, 1.6, 0)];
     var offset = Math.floor((cameraX || 0) * PARALLAX.fg / S);
     var start = -(((offset % cv.width) + cv.width) % cv.width) * S;
     ctx.save(); ctx.imageSmoothingEnabled = false;
@@ -785,7 +939,7 @@
     ctx.restore();
   }
   var EMPTY_OPTS = {};
-  var CLOUD_DEFS = [[0, 10, 1.1], [1, 24, 0.7], [2, 4, 0.9], [3, 34, 0.5], [4, 17, 0.8]];
+  var CLOUD_DEFS = [[0, 30, 1.0], [1, 52, 0.6], [2, 14, 0.8]];
 
   function drawBackground(ctx, cameraX, timeSeconds, opts) {
     opts = opts || EMPTY_OPTS;
@@ -793,52 +947,55 @@
     var W = opts.width || cv.width || 960, H = opts.height || cv.height || 540;
     var L = opts.levelLength || 4200;
     var C = cache && cache.W === W && cache.H === H && cache.L === L ? cache : prepare({ width: W, height: H, levelLength: L });
-    var S = C.S, t = timeSeconds || 0, cam = clamp(cameraX || 0, 0, C.range);
+    var S = C.S, t = timeSeconds || 0, cam = clamp(cameraX || 0, 0, C.range), a = animated, i;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    // 1. cielo
-    ctx.drawImage(C.sky, 0, 0, C.sky.width, C.sky.height, 0, 0, C.sky.width * S, C.sky.height * S);
-    var wrap = C.lw + 90;
-    var cloudDefs = CLOUD_DEFS;
-    for (var i = 0; i < cloudDefs.length; i++) {
-      var cd = cloudDefs[i], img = C.clouds[cd[0]];
-      var cx = (((i * 97 - t * cd[2] - cam * PARALLAX.cloud / S) % wrap) + wrap) % wrap - 70;
+    // 1. cielo + Apus + cúmulos (una sola capa opaca)
+    blit(ctx, C.far, Math.round(cam * PARALLAX.far), S, W);
+    var wrap = C.lw + 120;
+    for (i = 0; i < CLOUD_DEFS.length; i++) {
+      var cd = CLOUD_DEFS[i], img = C.clouds[cd[0]];
+      var cx = (((i * 173 + 140 - t * cd[2] - cam * PARALLAX.cloud / S) % wrap) + wrap) % wrap - 90;
       ctx.drawImage(img, 0, 0, img.width, img.height, Math.round(cx) * S, cd[1] * S, img.width * S, img.height * S);
     }
-    // 2. Apus
-    blit(ctx, C.far, Math.round(cam * PARALLAX.far), S, W);
-    // cóndor: planea cada ~45 s durante ~22 s
-    var cyc = t % 45;
-    if (cyc < 22) {
-      var k = cyc / 22, dir = Math.floor(t / 45) % 2 ? -1 : 1;
-      var px = dir > 0 ? -20 + k * (C.lw + 40) : C.lw + 20 - k * (C.lw + 40);
+    // cóndor: planea cada ~40 s durante ~24 s
+    var cyc = t % 40;
+    if (cyc < 24) {
+      var k = cyc / 24, dir = Math.floor(t / 40) % 2 ? -1 : 1;
+      var px = dir > 0 ? -30 + k * (C.lw + 60) : C.lw + 30 - k * (C.lw + 60);
       px -= cam * PARALLAX.condor / S;
-      var py = 30 + Math.sin(k * Math.PI * 2) * 8 + Math.sin(t * 0.7) * 2;
-      var fr = C.condor[Math.sin(t * 1.3) > 0.85 ? 1 : 0];
-      ctx.drawImage(fr, 0, 0, fr.width, fr.height, Math.round(px) * S, Math.round(py) * S, fr.width * S, fr.height * S);
+      var py = 34 + Math.sin(k * Math.PI * 2) * 12 + Math.sin(t * 0.7) * 3;
+      var flap = Math.sin(t * 1.3);
+      var fr = C.condor[flap > 0.9 ? 1 : flap < -0.93 ? 2 : 0];
+      ctx.save();
+      ctx.translate(Math.round(px) * S + (dir < 0 ? fr.width * S : 0), Math.round(py) * S);
+      if (dir < 0) ctx.scale(-1, 1);
+      ctx.drawImage(fr, 0, 0, fr.width, fr.height, 0, 0, fr.width * S, fr.height * S);
+      ctx.restore();
     }
-    // 3. valle del Cusco + humo e incendios
-    var offMF = Math.round(cam * PARALLAX.midfar);
-    blit(ctx, C.midfar, offMF, S, W);
-    var f8 = Math.floor(t * 8);
-    for (i = 0; i < C.mfFires.length; i++) {
-      var fe = C.mfFires[i], fx = Math.round(fe.x * S - offMF);
-      if (fx < -S * 2 || fx > W) continue;
-      var hf = hash(f8 + i * 13, 17);
-      ctx.drawImage(animated.fire[hf < 0.5 ? 0 : 1], fx + (hf < 0.3 ? -S : 0), Math.round(fe.y * S) - S, S, S);
-    }
-    for (i = 0; i < C.mfSmokes.length; i++) {
-      var sm = C.mfSmokes[i], ssx = Math.round(sm.x * S - offMF);
-      if (ssx < -80 || ssx > W + 80) continue;
-      drawSmoke(ctx, sm, ssx, Math.round(sm.y * S), S, t);
-    }
-    // 4. Sacsayhuamán
+    // 2. cordilleras azul-verdes
+    blit(ctx, C.midfar, Math.round(cam * PARALLAX.midfar), S, W);
+    // 3. capa media: andenes, quebrada, campamento
     var offM = Math.round(cam * PARALLAX.mid);
     blit(ctx, C.mid, offM, S, W);
+    var ph = phaseOf(t, 4, 0);
+    for (i = 0; i < C.falls.length; i++) {
+      var fa = C.falls[i], fx = Math.round(fa.x * S - offM);
+      if (fx < -16 * S || fx > W) continue;
+      var ff = a.falls[Math.floor(t * 10) % a.falls.length];
+      ctx.drawImage(ff, fx, Math.round(fa.y * S), ff.width * S, ff.height * S);
+    }
+    for (i = 0; i < C.incas.length; i++) {
+      var ib = C.incas[i], ix = Math.round(ib.x * S - offM);
+      if (ix < -24 * S || ix > W) continue;
+      var icv = a.incas[phaseOf(t, 2.2, i)];
+      ctx.drawImage(icv, ix, Math.round(ib.y * S), icv.width * S, icv.height * S);
+    }
     for (i = 0; i < C.banners.length; i++) {
       var bn = C.banners[i], bx = Math.round(bn.x * S - offM);
-      if (bx < -10 * S || bx > W) continue;
-      drawBanner(ctx, bx, Math.round(bn.y * S), S, t, i);
+      if (bx < -16 * S || bx > W) continue;
+      var bcv = a.banners[(ph + i * 3) % 12];
+      ctx.drawImage(bcv, bx, Math.round(bn.y * S) - 2 * S, bcv.width * S, bcv.height * S);
     }
     for (i = 0; i < C.midSmokes.length; i++) {
       var ms = C.midSmokes[i], mx = Math.round(ms.x * S - offM);
@@ -848,59 +1005,7 @@
     ctx.restore();
   }
 
-  // 5. primer plano: ichu meciéndose, piedras y cantutas (coordenadas de pantalla)
-  function rasterForeground(ctx, cameraX, timeSeconds, opts) {
-    opts = opts || EMPTY_OPTS;
-    var cv = ctx.canvas || {};
-    var W = opts.width || cv.width || 960, H = opts.height || cv.height || 540;
-    var S = H / LOW_H, t = timeSeconds || 0, off = (cameraX || 0) * PARALLAX.fg / S, sp = 11;
-    var k0 = Math.floor((off - 20) / sp), k1 = Math.ceil((off + W / S + 20) / sp);
-    ctx.save();
-    for (var k = k0; k <= k1; k++) {
-      var id = ((k % 128) + 128) % 128;
-      var h0 = hash(id, 77);
-      if (h0 > 0.5) continue;
-      var type = hash(id, 78), bx = Math.round((k * sp + hash(id, 79) * 7 - off) * S);
-      if (type < 0.66) {
-        var n = 4 + Math.floor(hash(id, 80) * 4), sway = Math.sin(t * 1.6 + id * 0.7) * 1.3 + Math.sin(t * 3.2 + id) * 0.4;
-        for (var bl = 0; bl < n; bl++) {
-          var lean = (bl - (n - 1) / 2) * 0.45, len = 5 + Math.floor(hash(id * 31 + bl, 81) * 7) - Math.abs(Math.round(lean * 2));
-          ctx.fillStyle = css(P.fgIchu[bl % 3]);
-          var runX = null, runY0 = 0;
-          for (var s = 1; s <= len + 1; s++) {
-            var pxs = s <= len ? Math.round(lean * s * 0.55 + sway * (s / len) * (s / len)) : null;
-            if (pxs !== runX) {
-              if (runX !== null) ctx.fillRect(bx + runX * S, H - (s - 1) * S, S, (s - runY0) * S);
-              runX = pxs; runY0 = s;
-            }
-          }
-        }
-      } else if (type < 0.86) {
-        var sw = 4 + Math.floor(hash(id, 82) * 4);
-        ctx.fillStyle = css(P.fgStone);
-        ctx.fillRect(bx, H - 3 * S, sw * S, 3 * S);
-        ctx.fillRect(bx + S, H - 4 * S, (sw - 2) * S, S);
-        ctx.fillStyle = css(P.fgStoneLit);
-        ctx.fillRect(bx + 2 * S, H - 4 * S, (sw - 3) * S, S);
-      } else {
-        var sh = 7 + Math.floor(hash(id, 83) * 4), sv = Math.round(Math.sin(t * 1.6 + id) * 0.6);
-        ctx.fillStyle = css(P.fgStem);
-        ctx.fillRect(bx, H - sh * S, S, sh * S);
-        ctx.fillRect(bx + sv * S + S, H - (sh - 1) * S, S, S);
-        ctx.fillRect(bx - S, H - (sh - 3) * S, S, S);
-        for (var fl = 0; fl < 3; fl++) {
-          var fx = bx + (fl - 1) * 2 * S + sv * S, fy = H - (sh - fl * 2 - 1) * S;
-          ctx.fillStyle = css(P.cantuta[fl % 3]);
-          ctx.fillRect(fx, fy, S, 3 * S);
-          ctx.fillStyle = css(P.cantutaTip);
-          ctx.fillRect(fx, fy + 3 * S, S, S);
-        }
-      }
-    }
-    ctx.restore();
-  }
-
-  // Suelo: coordenadas de MUNDO (dentro de ctx.translate(-cam,0)). Tierra apisonada + pasto/ichu.
+  // Suelo: coordenadas de MUNDO (dentro de ctx.translate(-cam,0)). Muro inca con pasto encima.
   function drawGround(ctx, x, y, w, h, cameraX) {
     var S = lastScale, hl = Math.ceil(h / S);
     var strip = groundCache[hl] || (groundCache[hl] = buildGroundStrip(hl));
@@ -922,7 +1027,8 @@
   }
 
   // Plataforma de piedra poligonal inca: coordenadas de MUNDO. (x,y)=esquina sup. izq.;
-  // la cara superior está exactamente en y (coincide con la colisión de game.js).
+  // la cara superior está exactamente en y (coincide con la colisión de game.js); el pasto
+  // sobresale unos píxeles por encima.
   function drawPlatform(ctx, x, y, w, h, cameraX) {
     var viewW = (ctx.canvas && ctx.canvas.width) || 960, cam = cameraX || 0;
     if (cameraX !== undefined && (x + w < cam - 10 || x > cam + viewW + 10)) return;
@@ -931,7 +1037,7 @@
     var cvs = platCache[key] || (platCache[key] = buildPlatform(cw, ch, 1000 + Math.round(x) * 7 + cw));
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(cvs, 0, 0, cw, ch, Math.round(x), Math.round(y), cw * S, ch * S);
+    ctx.drawImage(cvs, 0, 0, cvs.width, cvs.height, Math.round(x), Math.round(y) - 6 * S, cvs.width * S, cvs.height * S);
     ctx.restore();
   }
 

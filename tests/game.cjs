@@ -64,7 +64,7 @@ function makeGame(windowGlobals = {}) {
 let run = makeGame();
 run("reset()");
 assert.equal(run("state"), "playing");
-assert.equal(run("enemies.length"), 9);
+assert.equal(run("enemies.length"), 13);
 run("shoot(false)");
 assert.equal(run("player.ammo"), 23);
 assert.equal(run("shots.length"), 1);
@@ -84,10 +84,10 @@ assert.equal(run("state"), "playing");
 run("reset(); player.hp=1; player.inv=0; hit(); update(.001)");
 assert.equal(run("state"), "lost");
 run(
-  "reset(); enemies.slice(0,8).forEach(e=>e.dead=true); const boss=enemies[8]; boss.hp=1; shots.push({x:boss.x,y:boss.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
+  "reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); const boss=enemies.find(e=>e.type===3); boss.hp=1; shots.push({x:boss.x,y:boss.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
 );
 assert.equal(run("state"), "won");
-assert.equal(run("score"), 1000);
+assert.equal(run("score"), 1800);
 // El perro (type 0) tiene hitbox bajo y apoya en el suelo.
 run("reset()");
 assert.equal(run("enemies[0].type"), 0);
@@ -108,13 +108,13 @@ assert.equal(run("player.throwT <= 0"), true);
 assert.equal(run("player.anim"), "hurt");
 // P0-1 · Empate: el jefe cae y el héroe recibe su último golpe en el mismo frame → victoria.
 // (a) bala enemiga procesada ANTES que la piedra que mata al jefe
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var B=enemies[8]; B.hp=1; player.hp=1; player.inv=0;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var B=enemies.find(e=>e.type===3); B.hp=1; player.hp=1; player.inv=0;
   shots.length=0;
   shots.push({x:player.x+5,y:player.y+20,vx:0,vy:0,life:1,good:false});
   shots.push({x:B.x+10,y:B.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)`);
 assert.equal(run("state"), "won");
 // (b) piedra primero, bala después
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); B=enemies[8]; B.hp=1; player.hp=1; player.inv=0;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); B=enemies.find(e=>e.type===3); B.hp=1; player.hp=1; player.inv=0;
   shots.length=0;
   shots.push({x:B.x+10,y:B.y+20,vx:0,vy:0,life:1,good:true,damage:1});
   shots.push({x:player.x+5,y:player.y+20,vx:0,vy:0,life:1,good:false}); update(.016)`);
@@ -141,7 +141,7 @@ assert.equal(run("canFire(A)"), false);
 run("cam=1600");
 assert.equal(run("canFire(A)"), true);
 // El jefe que sale de cámara durante la preparación cancela el disparo.
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var Z=enemies[8]; player.x=2000; player.inv=999;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var Z=enemies.find(e=>e.type===3); player.x=2000; player.inv=999;
   Z.x=1750; Z.home=1750; cam=1720; Z.cool=0; shots.length=0; update(.016)`);
 assert.ok(run("Z.wind") > 0);
 run("for (let i=0;i<60;i++){ player.x += 4; update(.016); }");
@@ -169,7 +169,7 @@ assert.ok(run("player.inv") > 1.5);
 assert.equal(run("enemies[0].dead && enemies[1].dead"), true);
 assert.equal(run("enemies[3].x"), run("enemies[3].home"));
 assert.equal(run("score"), 200);
-assert.equal(run("enemies.length"), 9);
+assert.equal(run("enemies.length"), 13);
 // El botón principal de la pantalla de derrota revive (no reinicia); «Empezar de nuevo» sí.
 run("player.hp=1; player.inv=0; hit(); update(.016)");
 run("document.querySelector('#start').onclick({})");
@@ -179,10 +179,10 @@ run("document.querySelector('#restart').onclick({})");
 assert.equal(run("enemies.every(e=>!e.dead) && world.cpPile===-1 && player.x===70"), true);
 // Respawn con el jefe activo: conserva el daño del jefe y lo devuelve a su puesto.
 run(
-  "player.x=3200; update(.016); var Bo=enemies[8]; Bo.hp=10; Bo.x=3300; Bo.wind=.3; player.hp=1; player.inv=0; hit(); update(.016); respawn()",
+  "player.x=3200; update(.016); var Bo=enemies.find(e=>e.type===3); Bo.hp=10; Bo.x=3300; Bo.wind=.3; player.hp=1; player.inv=0; hit(); update(.016); respawn()",
 );
 assert.equal(run("Bo.hp"), 10);
-assert.equal(run("Bo.x"), 3910);
+assert.equal(run("Bo.x"), 5350);
 assert.equal(run("Bo.wind"), 0);
 assert.equal(run("shots.length"), 0);
 
@@ -193,7 +193,7 @@ run(
 assert.ok(run("shots.find(s=>s.spit).vx") > 0);
 
 // P1-2 · El jefe anuncia el disparo (preparación ≥0,4 s) y nunca dispara alto+bajo a la vez.
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var C=enemies[8]; player.x=3600; player.inv=999;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var C=enemies.find(e=>e.type===3); player.x=3600; player.inv=999;
   cam=player.x-280; C.x=3900; C.cool=0; shots.length=0; update(.016)`);
 assert.ok(run("C.wind") >= 0.4);
 assert.equal(run("C.anim"), "shoot");
@@ -222,7 +222,7 @@ assert.ok(run("player.x + player.w < D.x")); // separado de verdad del atacante
 assert.equal(run("player.hp"), 5);
 
 // P1-4 · Sin munición, J golpea con la macana y el jefe es vencible.
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var M=enemies[8]; M.hp=2; player.ammo=0; player.fire=0;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var M=enemies.find(e=>e.type===3); M.hp=2; player.ammo=0; player.fire=0;
   player.x=M.x-30; player.face=1; player.cool=0; shoot(false)`);
 assert.equal(run("M.hp"), 1);
 assert.equal(run("shots.length"), 0);
@@ -262,7 +262,7 @@ assert.ok(run("G.stun <= 0 && G.anim !== 'stunned'"));
 run("G.stun=2; player.x=G.x+1000; for (let i=0;i<150;i++){ update(.016); player.x=G.x+1000; }");
 assert.ok(run("G.stun") <= 0);
 // Contra el jefe: aturdimiento corto que cancela la preparación.
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var J2=enemies[8]; player.x=3600; player.inv=999; player.face=1;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var J2=enemies.find(e=>e.type===3); player.x=3600; player.inv=999; player.face=1;
   cam=player.x-280; J2.x=3800; J2.wind=.3; J2.pat='low'; J2.cool=5; shots.length=0;
   shots.push({x:J2.x+10,y:J2.y+30,vx:400,vy:0,life:1,good:true,damage:1,bola:true,w:16,h:16}); update(.016)`);
 assert.ok(run("J2.stun > 0 && J2.stun <= 0.7 && J2.wind === 0"));
@@ -345,11 +345,11 @@ run("reset(); player.x=850; update(.016); player.x=1200");
 calls.length = 0;
 run("draw()");
 const pilesDrawn = calls.filter((c) => c.kind === "stone_pile");
-assert.equal(pilesDrawn.length, 6);
+assert.equal(pilesDrawn.length, 8);
 assert.equal(pilesDrawn.filter((c) => c.anim === "active").length, 1);
 // Telegrafía del jefe y boleadora se dibujan con el arte.
 run(
-  "enemies.slice(0,8).forEach(e=>e.dead=true); var C2=enemies[8]; C2.wind=.3; C2.pat='low'; shots.push({x:player.x,y:player.y,vx:1,vy:0,life:1,good:true,bola:true})",
+  "enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var C2=enemies.find(e=>e.type===3); C2.wind=.3; C2.pat='low'; shots.push({x:player.x,y:player.y,vx:1,vy:0,life:1,good:true,bola:true})",
 );
 calls.length = 0;
 run("draw()");
@@ -400,7 +400,7 @@ assert.equal(RM.statusOf(0, 1) + RM.statusOf(1, 1) + RM.statusOf(2, 1), "complet
 assert.equal(RM.stageAt(RM.stages[3].node[0], RM.stages[3].node[1] - 8), 3);
 assert.equal(RM.stageAt(5, 5), -1);
 for (const s of RM.stages) {
-  assert.ok(s.history.length > 20 && s.fiction.startsWith("Ficción") && /^15\d\d$/.test(s.year));
+  assert.ok(s.history.length > 20 && s.fiction.startsWith("Ficción") && (s.fictional ? s.year === "Ficción" : /^15\d\d$/.test(s.year)));
   const p = RM.project(s.lat, s.lon);
   assert.ok(p.x > 0 && p.x < 640 && p.y > 0 && p.y < 540, "etapa dentro del mapa: " + s.id);
 }
@@ -446,7 +446,7 @@ run("mapKey('Enter')");
 assert.equal(run("state"), "playing");
 // Victoria → progreso guardado y el héroe camina hacia la etapa 2 (Próximamente).
 run(
-  "enemies.slice(0,8).forEach(e=>e.dead=true); var Bm=enemies[8]; Bm.hp=1; shots.push({x:Bm.x,y:Bm.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
+  "enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var Bm=enemies.find(e=>e.type===3); Bm.hp=1; shots.push({x:Bm.x,y:Bm.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
 );
 assert.equal(run("state"), "won");
 assert.equal(JSON.parse(store.data["chankas.progress.v1"]).progress, 1);
@@ -485,7 +485,7 @@ assert.equal(run("keys.has('KeyJ')"), true);
 // Con el foco en un botón (p. ej. «Sonido»), Espacio/Enter no juegan la etapa.
 run = makeGame({ ChankasMap: MAPSTUB, localStorage: memStorage() });
 run("document.querySelector('#start').onclick()");
-const btnTarget = { closest: () => ({}) };
+const btnTarget = { closest: selector => selector.includes("button") ? {} : null };
 let pd = false;
 run.fire("keydown", { code: "Space", target: btnTarget, preventDefault: () => (pd = true) });
 run.fire("keydown", { code: "Enter", target: btnTarget });
@@ -812,8 +812,8 @@ assert.ok(run("player.x") > 900);
 
 // Apacheta en la entrada de la arena: punto de reaparición y recarga justo antes del jefe.
 run("reset(); player.x=piles[ARENA_PILE]; update(1/60)");
-assert.deepEqual(J("[world.cpPile, world.checkpoint]"), [5, 3500]);
-assert.ok(run("piles[ARENA_PILE] > 3400 && piles[ARENA_PILE] < enemies[8].home"));
+assert.deepEqual(J("[world.cpPile, world.checkpoint]"), [7, 5100]);
+assert.ok(run("piles[ARENA_PILE] > 3400 && piles[ARENA_PILE] < enemies.find(e=>e.type===3).home"));
 run("player.ammo=0; keys.add('KeyE'); update(1/60); keys.clear()");
 assert.equal(run("player.ammo"), 24);
 // Con el jefe vivo, mantener E no da boleadoras infinitas: una recarga por vida y por pulsación.
@@ -823,14 +823,14 @@ run("keys.clear(); update(1/60); keys.add('KeyE'); update(1/60); keys.clear()");
 assert.equal(run("player.ammo < 24 || player.bola < 3"), true);
 run("world.arenaReloads=1; player.ammo=24;");
 // Al reaparecer allí, el jefe sube al 60 % si tenía menos…
-run("var BA=enemies[8]; BA.hp=5; player.hp=1; player.inv=0; hit(); update(1/60); respawn()");
-assert.deepEqual(J("[player.x, BA.hp, BA.x]"), [3500, Math.ceil(32 * 0.6), 3910]);
+run("var BA=enemies.find(e=>e.type===3); BA.hp=5; player.hp=1; player.inv=0; hit(); update(1/60); respawn()");
+assert.deepEqual(J("[player.x, BA.hp, BA.x]"), [5100, Math.ceil(32 * 0.6), 5350]);
 // …y conserva su vida si tenía más.
 run("BA.hp=25; player.hp=1; player.inv=0; hit(); update(1/60); respawn()");
 assert.equal(run("BA.hp"), 25);
 
 // Aviso del jefe: expone la altura del disparo y dura al menos 0,42 s en ambas fases.
-run(`reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var BT=enemies[8]; player.x=3600; player.inv=999;
+run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var BT=enemies.find(e=>e.type===3); player.x=3600; player.inv=999;
   cam=player.x-280; BT.x=3900; BT.cool=0; BT.shotN=1; update(1/60)`);
 assert.deepEqual(J("[bossTelegraph(BT).height, bossTelegraph(BT).dir]"), ["high", -1]);
 assert.equal(run("bossTelegraph(BT).y"), run("BT.y + 22"));
@@ -858,7 +858,7 @@ run = makeGame({ ChankasSprites: SP2, matchMedia: () => ({ matches: true }) });
 run("reset(); draw()");
 assert.ok(calls2.some((c) => c.kind === "hero" && c.outline === run("HERO_RIM")));
 assert.ok(calls2.filter((c) => c.kind !== "hero").every((c) => !c.outline));
-run("enemies.slice(0,8).forEach(e=>e.dead=true); var BR=enemies[8]; BR.pat='low'; BR.wdir=-1");
+run("enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var BR=enemies.find(e=>e.type===3); BR.pat='low'; BR.wdir=-1");
 let lit = 0;
 for (let i = 0; i < 12; i++) {
   calls2.length = 0;
@@ -1048,8 +1048,8 @@ pressH();
 run("for (let i=0;i<60 && DG.hp===3;i++){ world.llama=920; update(1/60); }");
 assert.deepEqual(J("[DG.hp, DG.anim, DG.stun > 0]"), [2, "spat", true]);
 // Capitán: reacción especial la primera vez («¡Maldita llama!», más larga) y corta después.
-const bossScene = `reset(); enemies.slice(0,8).forEach(e=>e.dead=true); var CP=enemies[8]; player.x=3700; player.inv=999;
-  world.llama=llamaS.prev=3620; CP.x=CP.home=3800; CP.cool=99; cam=3420; world.spitUsed=true; shots.length=0;`;
+const bossScene = `reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var CP=enemies.find(e=>e.type===3); player.x=5200; player.inv=999;
+  world.llama=llamaS.prev=5120; CP.x=CP.home=5300; CP.cool=99; cam=4920; world.spitUsed=true; shots.length=0;`;
 run(bossScene + "applySpitImpact(CP,{vx:400})");
 assert.deepEqual(J("[CP.hp, CP.anim, CP.spatOnce, world.speech.map(b=>b.text)]"), [31, "spat", true, ["¡Maldita llama!"]]);
 assert.ok(run("CP.stun") > 0.5 && run("CP.stun") <= 0.8);
@@ -1070,13 +1070,13 @@ assert.deepEqual(J("[world.spitRescueUsed, world.spitCharges, world.spitUsed, wo
   "¡Tu llama también sabe defenderse! Pulsa H para ayudarla",
 ]);
 assert.equal(J("hudView(player, world, 0)").spitHint, true);
-run("for (let i=0;i<60 && CP.hp===32;i++){ world.llama=3620; update(1/60); }");
+run("for (let i=0;i<60 && CP.hp===32;i++){ world.llama=5120; update(1/60); }");
 assert.equal(run("CP.hp"), 31);
 // No se repite: ni en la misma vida, ni al reaparecer (aunque se repita el enfrentamiento).
-run("for (let i=0;i<8*60;i++){ world.llama=3620; update(1/60); }");
+run("for (let i=0;i<8*60;i++){ world.llama=5120; update(1/60); }");
 assert.equal(run("world.spitCharges"), 3);
 assert.equal(run("shots.filter(s=>s.spit).length"), 0);
-run("player.hp=1; player.inv=0; hit(); update(1/60); respawn(); player.x=3700; player.inv=999; world.llama=3620; cam=3420; CP.x=3800; update(1/60)");
+run("player.hp=1; player.inv=0; hit(); update(1/60); respawn(); player.x=5200; player.inv=999; world.llama=5120; cam=4920; CP.x=5300; update(1/60)");
 assert.deepEqual(J("[world.spitCharges, world.spitUsed, world.spitRescueUsed, !!world.spitPending]"), [3, false, true, false]);
 // Si el jugador ya escupió en esta vida, no hay rescate.
 run(bossScene + "world.spitUsed=true; update(1/60)");
@@ -1177,6 +1177,190 @@ assert.ok(run("fx.some(f=>f.kind==='splat')"));
     for (const a of anims) for (let i = 0; i < L[k].anims[a].frames; i++) ctx.ChankasSprites._grid(k, a, i);
 })();
 
-console.log(
-  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones), pulido (piquero cuerpo a cuerpo, perro con alerta, apacheta de la arena, aviso del jefe, contorno del héroe, mapa vertical, cartela), escupitajo de la llama (cargas, recarga y pausa, H sin ráfagas, objetivo y obstáculos, impacto y aturdimiento, reacciones del capitán, rescate automático, personalidad, HUD, sonido, botón táctil, sprites).",
+
+// ---------------------------------------------------------------------------
+// Ruta de la resistencia (aprobada): Sacsayhuamán → Ollantaytambo → La Convención (Vitcos) →
+// Vilcabamba (Espíritu Pampa) → El Callao (ficción declarada).
+assert.deepEqual(
+  JSON.parse(JSON.stringify(RM.stages.map((s) => [s.id, s.name, s.year]))),
+  [
+    ["sacsayhuaman", "Sacsayhuamán", "1536"],
+    ["ollantaytambo", "Ollantaytambo", "1537"],
+    ["laconvencion", "La Convención", "1537"],
+    ["vilcabamba", "Vilcabamba", "1539"],
+    ["callao", "El Callao", "Ficción"],
+  ],
 );
+const near = (s, lat, lon) => Math.abs(s.lat - lat) < 0.1 && Math.abs(s.lon - lon) < 0.1;
+assert.ok(near(RM.stages[2], -13.1, -72.94), "Vitcos (Rosaspata)");
+assert.ok(near(RM.stages[3], -12.91, -73.21), "Espíritu Pampa");
+assert.ok(/Vitcos/.test(RM.stages[2].history) && /1537/.test(RM.stages[2].history));
+assert.ok(/1572/.test(RM.stages[3].history) && /Gonzalo Pizarro/.test(RM.stages[3].history));
+assert.ok(RM.stages[4].fictional && /inventada/.test(RM.stages[4].fiction) && /no ocurrieron/.test(RM.stages[4].history));
+assert.equal(RM.stages.filter((s) => s.fictional).length, 1);
+// Iconos: todos existen en el mapa real y los nodos no se pisan (≥ 40 px base entre sí).
+for (let i = 0; i < RM.stages.length; i++)
+  for (let j = i + 1; j < RM.stages.length; j++) {
+    const a = RM.stages[i].node, b = RM.stages[j].node;
+    assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) >= 40, "nodos separados " + i + "-" + j);
+  }
+assert.ok(RMC.draw(fakeCtx(), 1, { width: 960, height: 540, progress: 4, selected: 3 }));
+
+// Interfaz «arte clave»: modelo de vista con etapa, lugar y año; arma elegida; recarga contextual.
+run = makeGame({ ChankasUI: UISTUB, ChankasMap: MAPSTUB, localStorage: memStorage() });
+uv = J("uiView()");
+assert.deepEqual([uv.stages.length, uv.stagePlace, uv.stageYear, uv.layout, uv.rotate], [5, "Cusco", "1536", "desktop", false]);
+assert.deepEqual(J("uiView().stages.map(s=>s.fictional)"), [false, false, false, false, true]);
+assert.equal(run("uiAction('weapon', 1)"), false); // en el título no hay arma que elegir
+run("uiAction('start')");
+assert.equal(run("uiAction('weapon', 1)"), true);
+assert.equal(J("uiView().hud.weapon"), "K");
+assert.equal(run("fireKey(player)"), "KeyK");
+run("player.fire = 0");
+assert.equal(run("fireKey(player)"), "KeyJ"); // sin piedras de fuego, la huaraca
+run("uiAction('weapon', 2)");
+assert.equal(run("fireKey(player)"), "KeyL");
+run("player.bola = 0");
+assert.equal(run("fireKey(player)"), "KeyJ");
+assert.equal(run("fireKey(null)"), "KeyJ");
+assert.equal(run("uiAction('weapon', 7)"), false);
+// Recargar contextual: junto a la apacheta inicial sí; lejos de apachetas y de la llama, no.
+run("player.x = piles[0]; update(1/60)");
+assert.equal(J("uiView().reload"), true);
+run("player.x = 1250; world.llama = 300; update(1/60)");
+assert.equal(J("uiView().reload"), false);
+// «suspend» pausa sin alternar (salir de pantalla completa, pestaña oculta).
+assert.equal(run("uiAction('suspend')"), true);
+assert.equal(run("state"), "paused");
+assert.equal(run("uiAction('suspend')"), false);
+assert.equal(run("state"), "paused");
+
+// Disposición por tipo de puntero (no por user agent) y aviso «Gira tu teléfono».
+assert.equal(run("controlLayout({coarse:true, w:844, h:390})"), "touch");
+assert.equal(run("controlLayout({coarse:false, w:390, h:844})"), "desktop");
+assert.equal(run("needsRotate('touch', 390, 844, 'playing')"), true);
+assert.equal(run("needsRotate('touch', 390, 844, 'menu')"), false); // título y mapa funcionan en vertical
+assert.equal(run("needsRotate('touch', 844, 390, 'playing')"), false);
+assert.equal(run("needsRotate('desktop', 390, 844, 'playing')"), false);
+assert.deepEqual(J("rotateStep('playing', true, false)"), { act: "pause", held: true });
+assert.deepEqual(J("rotateStep('paused', true, true)"), { act: null, held: true });
+assert.deepEqual(J("rotateStep('paused', false, true)"), { act: "resume", held: false });
+assert.deepEqual(J("rotateStep('paused', false, false)"), { act: null, held: false }); // pausa del jugador: no se reanuda
+assert.deepEqual(J("rotateStep('menu', true, true)"), { act: null, held: false });
+// Con puntero táctil y ventana vertical, el modelo lo indica y el bucle pausa/reanuda.
+const win = { ChankasUI: UISTUB, ChankasMap: MAPSTUB, localStorage: memStorage(), innerWidth: 390, innerHeight: 844,
+  matchMedia: (q) => ({ matches: q === "(pointer: coarse)" }) };
+run = makeGame(win);
+run("uiAction('start')");
+assert.deepEqual(J("[uiView().layout, uiView().rotate]"), ["touch", true]);
+run("loop(16)");
+assert.deepEqual(J("[state, rotateHeld]"), ["paused", true]);
+run("window.innerWidth = 844; window.innerHeight = 390; loop(32)");
+assert.deepEqual(J("[state, rotateHeld, uiView().rotate]"), ["playing", false, false]);
+// Si además se oculta la pestaña (o se sale de pantalla completa), al girar no se reanuda sola.
+run("window.innerWidth = 390; window.innerHeight = 844; loop(48)");
+assert.deepEqual(J("[state, rotateHeld]"), ["paused", true]);
+assert.equal(run("uiAction('suspend')"), true);
+run("window.innerWidth = 844; window.innerHeight = 390; loop(64)");
+assert.deepEqual(J("[state, rotateHeld]"), ["paused", false]);
+// Cruceta: zona muerta, izquierda/derecha, arriba = saltar (diagonales combinan).
+assert.deepEqual(J("padKeys(2, 3, 60)"), []);
+assert.deepEqual(J("padKeys(-50, 0, 60)"), ["ArrowLeft"]);
+assert.deepEqual(J("padKeys(50, -50, 60)"), ["ArrowRight", "ArrowUp"]);
+assert.deepEqual(J("padKeys(0, -55, 60)"), ["ArrowUp"]);
+assert.deepEqual(J("padKeys(0, 55, 60)"), []); // abajo: sin acción
+assert.deepEqual(J("padKeys(NaN, 0, 60)"), []);
+
+// Página: controles en pantalla, HUD superpuesto, metadatos sociales y app web; sin estilos en línea (CSP).
+const page = fs.readFileSync("index.html", "utf8");
+for (const k of ["ArrowLeft", "ArrowRight", "Space", "KeyJ", "KeyK", "KeyL", "KeyH", "KeyE"])
+  assert.match(page, new RegExp('data-key="' + k + '"'), "botón " + k);
+assert.equal((page.match(/data-key="KeyH"/g) || []).length, 1, "sin controles táctiles duplicados");
+assert.match(page, /data-fire/);
+assert.match(page, /data-pad/);
+assert.match(page, /<meta property="og:image" content="https:\/\/chankas\.maxflow\.ink\/assets\/keyart-social\.jpg"/);
+assert.match(page, /<meta name="twitter:card" content="summary_large_image"/);
+assert.match(page, /<meta property="og:url" content="https:\/\/chankas\.maxflow\.ink\/"/);
+assert.match(page, /<link rel="manifest" href="manifest\.webmanifest"/);
+assert.match(page, /apple-mobile-web-app-capable/);
+assert.doesNotMatch(page, /\sstyle="/);
+assert.doesNotMatch(page, /<script>(?!<\/script>)/);
+const mf = JSON.parse(fs.readFileSync("manifest.webmanifest", "utf8"));
+assert.deepEqual([mf.display, mf.orientation, mf.theme_color], ["fullscreen", "landscape", "#16121A"]);
+assert.ok(mf.icons.some((i) => i.sizes === "192x192") && mf.icons.some((i) => i.sizes === "512x512"));
+assert.match(fs.readFileSync("deploy/nginx/templates/security-headers.inc.template", "utf8"), /manifest-src 'self'/);
+assert.ok(fs.statSync("assets/keyart.webp").size < 250 * 1024, "arte clave optimizado");
+
+// build-dist: publica JS/CSS con hash y los recursos estáticos; nunca data.txt, docs ni tests.
+{
+  const os = require("node:os"), path = require("node:path"), { execFileSync } = require("node:child_process");
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "chankas-dist-"));
+  try {
+    execFileSync(process.execPath, ["scripts/build-dist.cjs", outDir], { stdio: "pipe" });
+    const files = [];
+    (function walk(d, rel) {
+      for (const f of fs.readdirSync(d)) {
+        const full = path.join(d, f), r = rel ? rel + "/" + f : f;
+        if (fs.statSync(full).isDirectory()) walk(full, r);
+        else files.push(r);
+      }
+    })(outDir, "");
+    for (const f of ["manifest.webmanifest", "assets/keyart.webp", "assets/keyart-social.jpg", "assets/favicon.svg", "assets/icon-192.png", "assets/icon-512.png", "assets/apple-touch-icon.png", "index.html", "404.html"])
+      assert.ok(files.includes(f), "dist incluye " + f);
+    assert.ok(files.some((f) => /^game\.[0-9a-f]{12}\.js$/.test(f)) && files.some((f) => /^style\.[0-9a-f]{12}\.css$/.test(f)));
+    assert.ok(!files.some((f) => /data\.txt|^docs\/|^tests\/|preview-|\.md$/.test(f)), "nada de datos ni documentación");
+    const distHtml = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
+    assert.match(distHtml, /href="manifest\.webmanifest"/);
+    assert.doesNotMatch(distHtml, /src="game\.js"/);
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+}
+
+console.log(
+  "OK: inicio, munición, fuego, recarga, salto, pausa, derrota, empate→victoria, sin disparos fuera de cámara, checkpoint/respawn, escupitajo, telegrafía del jefe, empuje, macana, perro sin balas, boleadora, HUD, arte (stubs), mapa (título→mapa→nivel, victoria→mapa, bloqueadas, localStorage, fallback, teclas retenidas, foco, toques), interfaz v2 (HUD, ruta, alforjas de la llama, pantallas y acciones), pulido (piquero cuerpo a cuerpo, perro con alerta, apacheta de la arena, aviso del jefe, contorno del héroe, mapa vertical, cartela), escupitajo de la llama (cargas, recarga y pausa, H sin ráfagas, objetivo y obstáculos, impacto y aturdimiento, reacciones del capitán, rescate automático, personalidad, HUD, sonido, botón táctil, sprites), arte clave (ruta I–V con ficción declarada, arma elegida, disparo táctil, recarga contextual, disposición táctil/escritorio, «Gira tu teléfono», cruceta, metadatos y manifiesto, build-dist con recursos).",
+);
+
+// Modalidades, recorrido ampliado, objetivo opcional y métricas competitivas.
+run = makeGame();
+run("reset()");
+assert.equal(run("END"), 5670);
+assert.equal(run("enemies.filter(e=>e.type!==3).length"), 12);
+assert.equal(run("enemies.find(e=>e.type===3).home"), 5350);
+run("difficultyId='chasqui'; reset()");
+assert.equal(run("player.fire"), 7);
+run("player.ammo=0; world.llama=player.x; llamaReload()");
+assert.equal(run("player.ammo"), 10);
+run("difficultyId='pachacutec'; reset(); player.ammo=0; world.llama=player.x; llamaReload()");
+assert.equal(run("player.fire"), 3);
+assert.equal(run("player.ammo"), 6);
+assert.equal(run("difficulty.attacks"), 1.25);
+run("difficultyId='inka'; reset(); enemies.forEach(e=>e.dead=true); player.inv=999; player.x=3750; player.y=235; player.vy=0; update(.001)");
+assert.equal(run("world.optionalCompleted"), true);
+assert.equal(run("score"), 300);
+assert.equal(run("player.fire"), 6);
+run("update(.001)");
+assert.equal(run("score"), 300, "la recompensa opcional no se repite");
+run("reset(); shoot(false); player.cool=0; throwBola()");
+assert.equal(run("world.shots"), 2);
+run("player.ammo=0; player.cool=0; shoot(false)");
+assert.equal(run("world.shots"), 2, "la macana no cuenta como lanzamiento");
+let payload, begun, abandoned = 0;
+run = makeGame({ChankasCompetition: {
+ getDifficulty:()=>"pachacutec", begin:id=>{begun=id;}, finish:m=>{payload=m;}, reset:()=>{abandoned++;}, sync:()=>{},
+}});
+run("reset(); world.time=120; world.kills=12; world.shots=20; world.hits=16; world.llamaHits=5; world.optionalCompleted=true; score=2500; win()");
+assert.equal(begun, "pachacutec");
+assert.deepEqual(JSON.parse(JSON.stringify(payload)), {completed:true,kills:12,shots:20,hits:16,llamaHits:5,deaths:0,optionalCompleted:true,durationMs:120000});
+assert.equal(run("score"), 3180);
+run("goTitle()");
+assert.equal(abandoned, 1);
+run.fire("chankas-profile", {detail:{progress:{completedStages:[1]}}});
+assert.equal(run("mapS.progress"), 1);
+run("reset()");
+run.fire("keydown", {code:"KeyD",target:{closest:sel=>sel.includes("input") ? {} : null}});
+assert.equal(run("keys.has('KeyD')"), false, "escribir en el alias no mueve al héroe");
+console.log("OK: complejidad temática, extensión de etapa, recompensa opcional única, métricas, restauración MongoDB y abandono.");
+
+run = makeGame({ChankasCompetition:{getProgress:()=>({completedStages:[1]})}});
+assert.equal(run("mapS.progress"), 1, "se restaura un perfil llegado antes de cargar el motor");

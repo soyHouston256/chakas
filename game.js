@@ -25,15 +25,35 @@ const SP = window.ChankasSprites || null,
 const UI = window.ChankasUI && window.ChankasUI.ready ? window.ChankasUI : null;
 const ENEMY_KIND = ["perro", "arcabucero", "piquero", "capitan"];
 const SPR = { facing: 1, fill: 1, flash: false, alpha: 1, rotation: 0, active: false, outline: null, w: 0, h: 0 };
-// Contorno claro del héroe (lo pre-renderiza art/sprites.js una vez por fotograma de arte).
-const HERO_RIM = "#f6e3a6";
-const BG_OPTS = { width: 960, height: 540, levelLength: 4200 };
+// El borde oscuro del propio sprite integra al guerrero con el escenario.
+const HERO_RIM = null;
+// Configuración de contenido: las siguientes etapas podrán aportar su propio recorrido.
+const STAGE_CONFIG = {
+  id: "sacsayhuaman", length: 5670, bossX: 5350,
+  piles: [180, 850, 1600, 2450, 3200, 4000, 4700, 5100],
+  enemies: [620, 980, 1360, 1750, 2150, 2600, 2940, 3300, 3660, 4020, 4440, 4760],
+  platforms: [
+    { x: 580, y: 350, w: 180 }, { x: 1250, y: 340, w: 200 },
+    { x: 2100, y: 345, w: 180 }, { x: 2820, y: 330, w: 220 },
+    { x: 3500, y: 350, w: 220 }, { x: 3660, y: 270, w: 220 },
+    { x: 4310, y: 345, w: 190 }, { x: 4750, y: 340, w: 180 },
+  ],
+  optional: { x: 3750, y: 238, w: 28, h: 28 },
+};
+const DIFFICULTIES = {
+  chasqui: { name: "Chasqui", speed: 0.8, attacks: 0.8, projectiles: 0.85, fire: 7, refill: 10 },
+  inka: { name: "Inka", speed: 1, attacks: 1, projectiles: 1, fire: 5, refill: 8 },
+  pachacutec: { name: "Pachacútec", speed: 1.2, attacks: 1.25, projectiles: 1.15, fire: 3, refill: 6 },
+};
+const COMPETITION = window.ChankasCompetition || null;
+let difficultyId = "inka", difficulty = DIFFICULTIES.inka;
+const BG_OPTS = { width: 960, height: 540, levelLength: STAGE_CONFIG.length };
 const DOG_W = 44,
   DOG_H = 26;
 const W = 960,
   H = 540,
   GROUND = 440,
-  END = 4200;
+  END = STAGE_CONFIG.length;
 const MAX_HP = 6,
   MAX_AMMO = 24,
   MAX_BOLA = 3,
@@ -78,16 +98,11 @@ const SPIT = {
 const SOLIDS = [];
 // La última apacheta está en la entrada de la arena del capitán: punto de reaparición
 // y recarga justo antes del jefe (ARENA_PILE).
-const piles = [180, 850, 1600, 2450, 3200, 3500];
+const piles = STAGE_CONFIG.piles;
 const ARENA_PILE = piles.length - 1,
   ARENA_RELOADS = 1, // recargas en la apacheta de la arena por vida, con el jefe vivo
   BOSS_RESPAWN_HP = 0.6; // al reaparecer en la arena, el jefe recupera hasta el 60 % si tenía menos
-const platforms = [
-  { x: 580, y: 350, w: 180 },
-  { x: 1250, y: 340, w: 200 },
-  { x: 2100, y: 345, w: 180 },
-  { x: 2820, y: 330, w: 220 },
-];
+const platforms = STAGE_CONFIG.platforms;
 // Contexto de audio solo con el sonido activado (todos los efectos pasan por aquí).
 function audioCtx() {
   if (!sound) return null;
@@ -227,6 +242,10 @@ function sfx(name) {
   } catch {}
 }
 function reset() {
+  const selected = COMPETITION ? COMPETITION.getDifficulty() : difficultyId;
+  difficultyId = Object.hasOwn(DIFFICULTIES, selected) ? selected : "inka";
+  difficulty = DIFFICULTIES[difficultyId];
+  if (COMPETITION) COMPETITION.begin(difficultyId);
   player = {
     x: 70,
     y: GROUND - 58,
@@ -235,7 +254,7 @@ function reset() {
     vy: 0,
     hp: MAX_HP,
     ammo: MAX_AMMO,
-    fire: 5,
+    fire: difficulty.fire,
     bola: MAX_BOLA,
     kb: 0,
     melee: 0,
@@ -263,6 +282,10 @@ function reset() {
     eHeld: false,
     arenaReloads: ARENA_RELOADS,
     kills: 0,
+    shots: 0,
+    hits: 0,
+    llamaHits: 0,
+    optionalCompleted: false,
     // Escupitajo: cargas, progreso de la siguiente (s), pausa entre escupitajos, orden en
     // curso, si el jugador lo usó en esta vida y si ya hubo rescate automático en la partida.
     spitCharges: SPIT.max,
@@ -278,7 +301,7 @@ function reset() {
   fx = [];
   llamaS = { anim: "idle", animT: 0, face: 1, prev: world.llama, spitT: 9, react: "", reactT: 0, still: 0 };
   enemies = [];
-  [620, 980, 1360, 1750, 2150, 2600, 2940, 3300].forEach((x, i) => {
+  STAGE_CONFIG.enemies.forEach((x, i) => {
     const dog = i % 3 === 0; // type 0 = perro (alano): hitbox bajo y ancho
     enemies.push({
       x,
@@ -297,7 +320,7 @@ function reset() {
     });
   });
   enemies.push({
-    x: 3910,
+    x: STAGE_CONFIG.bossX,
     y: GROUND - 96,
     w: 72,
     h: 96,
@@ -305,7 +328,7 @@ function reset() {
     max: 32,
     type: 3,
     cool: 1.5,
-    home: 3910,
+    home: STAGE_CONFIG.bossX,
     dead: false,
     ...animFields(),
   });
@@ -494,6 +517,7 @@ function onControl(e) {
   return !!(el && el.closest && el.closest("button, input, select, textarea, a"));
 }
 addEventListener("keydown", (e) => {
+  if (e.target && e.target.closest && e.target.closest("input, select, textarea")) return;
   if (state === "map") {
     // Con el foco en un botón (p. ej. «Sonido»), Enter/Espacio son del botón.
     if (onControl(e) && ACTIVATE.includes(e.code)) {
@@ -558,16 +582,81 @@ addEventListener("blur", () => {
   swallowed.clear();
   if (state === "playing") pause();
 });
-document.querySelectorAll("[data-key]").forEach((b) => {
+// Controles en pantalla: barra de botones (escritorio) y mandos táctiles superpuestos (cruceta,
+// botón de disparo y fila de armas). Todos alimentan el mismo `keys` que el teclado.
+function selectWeapon(w) {
+  if (state !== "playing" || !player || !["J", "K", "L"].includes(w)) return false;
+  if (player.weapon !== w) tone(520);
+  player.weapon = w;
+  return true;
+}
+// Mantener pulsado: la tecla se elige al tocar (pick) y se suelta al levantar el dedo.
+function holdControl(b, pick) {
+  let held = null;
+  const release = () => {
+    if (held) keys.delete(held);
+    held = null;
+  };
   b.onpointerdown = (e) => {
     e.preventDefault();
-    if (state === "map") return void mapKey(b.dataset.key);
+    if (state === "map") return void (b.dataset.key && mapKey(b.dataset.key));
     if (state !== "playing") return; // en menús, los toques no se acumulan como teclas
-    b.setPointerCapture(e.pointerId);
-    keys.add(b.dataset.key);
+    const k = pick();
+    if (!k) return;
+    b.setPointerCapture?.(e.pointerId);
+    release();
+    held = k;
+    keys.add(k);
   };
-  b.onpointerup = b.onpointercancel = () => keys.delete(b.dataset.key);
+  b.onpointerup = b.onpointercancel = b.onlostpointercapture = release;
+}
+// Cruceta: cada dedo (pointerId) aporta sus teclas; deslizar el pulgar cambia de dirección.
+function bindPad(el) {
+  const held = new Map();
+  // Cada dedo aporta sus teclas; solo se sueltan las que ya no aporta ningún dedo.
+  const set = (id, ks) => {
+    const before = new Set([...held.values()].flat());
+    if (ks.length) held.set(id, ks);
+    else held.delete(id);
+    const now = new Set([...held.values()].flat());
+    for (const k of before) if (!now.has(k)) keys.delete(k);
+    for (const k of now) keys.add(k);
+    const dir = [...now].join(" ");
+    if (el.dataset && el.dataset.dir !== dir) el.dataset.dir = dir;
+  };
+  const at = (e) => {
+    const r = el.getBoundingClientRect();
+    return padKeys(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2), r.width / 2);
+  };
+  el.onpointerdown = (e) => {
+    e.preventDefault();
+    const ks = at(e);
+    if (state === "map") return void (ks[0] && mapKey(ks[0]));
+    if (state !== "playing") return;
+    el.setPointerCapture?.(e.pointerId);
+    set(e.pointerId, ks);
+  };
+  el.onpointermove = (e) => {
+    if (held.has(e.pointerId) || (e.buttons && state === "playing" && el.hasPointerCapture?.(e.pointerId)))
+      set(e.pointerId, state === "playing" ? at(e) : []);
+  };
+  el.onpointerup = el.onpointercancel = el.onlostpointercapture = (e) => set(e.pointerId, []);
+}
+document.querySelectorAll("[data-key]").forEach((b) =>
+  holdControl(b, () => {
+    // En el modo táctil, Huaraca/Fuego/Bola eligen el arma del botón de disparo.
+    if (b.dataset.weapon && controlLayout(viewport()) === "touch") return void selectWeapon(b.dataset.weapon);
+    return b.dataset.key;
+  }),
+);
+// Activación sin puntero (lector de pantalla, teclado: click con detail 0): elige el arma.
+document.querySelectorAll("[data-weapon][data-key]").forEach((b) => {
+  b.onclick = (e) => {
+    if (e && e.detail === 0) selectWeapon(b.dataset.weapon);
+  };
 });
+document.querySelectorAll("[data-fire]").forEach((b) => holdControl(b, () => fireKey(player)));
+document.querySelectorAll("[data-pad]").forEach(bindPad);
 function burst(x, y, color, n = 12) {
   for (let i = 0; i < n; i++)
     particles.push({
@@ -615,17 +704,24 @@ function resolveDeath() {
   );
 }
 function win() {
+  if (state !== "playing") return;
   state = "won";
   holdKeys();
   if (world && player) {
     world.tip = null;
     llamaReact("celebrate", 999, player.x + player.w / 2 >= world.llama + 18 ? 1 : -1);
   }
+  if (COMPETITION) COMPETITION.finish({
+    completed: true, kills: world.kills, shots: world.shots, hits: world.hits,
+    llamaHits: world.llamaHits, deaths: world.deaths,
+    optionalCompleted: world.optionalCompleted, durationMs: Math.round(world.time * 1000),
+  });
+  score += Math.max(0, 500 - world.deaths * 100) + Math.max(0, 300 - Math.floor(world.time));
   const withMap = mapReady();
   if (withMap) saveProgress(Math.max(mapS.progress, 1));
   show(
     "¡El paso es nuestro!",
-    "Abriste el camino junto a tu llama. Quipu: " +
+    "Modalidad " + difficulty.name + ". Abriste el camino junto a tu llama. Quipu: " +
       score +
       (withMap
         ? " puntos. Sacsayhuamán queda atrás: el Qhapaq Ñan sigue hacia Ollantaytambo."
@@ -666,6 +762,7 @@ function meleeBox() {
 function throwBola() {
   if (player.cool > 0 || player.bola <= 0) return;
   player.bola--;
+  world.shots++;
   player.cool = 0.5;
   player.weapon = "L";
   restartAnim(player, "throw");
@@ -704,6 +801,7 @@ function shoot(fire) {
   if (!fire && player.ammo <= 0) return melee();
   if (player.cool > 0 || player.ammo <= 0 || (fire && player.fire <= 0)) return;
   player.ammo--;
+  world.shots++;
   if (fire) player.fire--;
   player.weapon = fire ? "K" : "J";
   player.cool = fire ? 0.65 : 0.24;
@@ -748,7 +846,7 @@ function nearLlama() {
 // Recarga desde las alforjas: +LLAMA_REFILL piedras (con tope) y una carga menos.
 function llamaReload() {
   if (!nearLlama() || world.loads <= 0 || player.ammo >= MAX_AMMO) return false;
-  player.ammo = Math.min(MAX_AMMO, player.ammo + LLAMA_REFILL);
+  player.ammo = Math.min(MAX_AMMO, player.ammo + difficulty.refill);
   world.loads--;
   tone(600);
   spawnFx("dust", "puff", world.llama + 18, GROUND - 40);
@@ -892,6 +990,7 @@ function splash(x, y, n = 10) {
 // Impacto en un enemigo: 1 de daño, aturdimiento corto (sin acumularse), retroceso,
 // mancha en la cara y reacción cómica. El capitán reacciona a lo grande la primera vez.
 function applySpitImpact(e, s) {
+  world.llamaHits++;
   const dir = s.vx >= 0 ? 1 : -1;
   e.face = -dir; // mira hacia la llama
   const x = faceX(e),
@@ -949,6 +1048,13 @@ function llamaReact(anim, dur, face) {
 }
 function update(dt) {
   world.time += dt;
+  if (!world.optionalCompleted && overlap(player, STAGE_CONFIG.optional)) {
+    world.optionalCompleted = true;
+    score += 300;
+    player.fire += 1;
+    world.tip = { text: "¡Terraza descubierta! +300 quipu y una piedra de fuego", t: 4 };
+    tone(850);
+  }
   player.cool -= dt;
   player.inv -= dt;
   player.animT += dt;
@@ -1034,7 +1140,7 @@ function update(dt) {
       continue;
     }
     const dir = player.x > e.x ? 1 : -1;
-    e.cool -= dt;
+    e.cool -= dt * difficulty.attacks;
     e.animT += dt;
     e.flash -= dt;
     const touching = overlap(player, e);
@@ -1046,7 +1152,7 @@ function update(dt) {
     } else if (e.type === 0) updateDog(e, dir, dt, touching);
     else if (e.type === 2) updatePiquero(e, dir, dt, touching);
     else {
-      if (e.type === 3 && !touching && e.wind <= 0) e.x += dir * 45 * dt;
+      if (e.type === 3 && !touching && e.wind <= 0) e.x += dir * 45 * difficulty.speed * dt;
       enemyAnim(e, dir);
       if (e.type === 3) updateBoss(e, dir, dt);
       else if (e.cool <= 0 && canFire(e)) {
@@ -1055,7 +1161,7 @@ function update(dt) {
         e.face = dir;
         restartAnim(e, ENEMY_ATTACK[e.type]);
         spawnFx("muzzle_flash", "burst", dir > 0 ? e.x + e.w + 6 : e.x - 6, e.y + 20, dir);
-        shots.push({ x: e.x, y: e.y + 22, vx: dir * 240, vy: 0, life: 3, good: false });
+        shots.push({ x: e.x, y: e.y + 22, vx: dir * 240 * difficulty.projectiles, vy: 0, life: 3, good: false });
       }
     }
     if (touching && hit(e.x + e.w / 2, e.type === 3 ? 340 : 260) && e.type === 0) {
@@ -1092,6 +1198,7 @@ function update(dt) {
             applySpitImpact(e, s);
             break;
           }
+          world.hits++;
           burst(s.x, s.y, s.fire ? "#f09e47" : "#eddb9c", 5);
           if (s.bola) {
             e.stun = e.type === 3 ? 0.7 : 2;
@@ -1148,7 +1255,7 @@ function updateDog(e, dir, dt, touching) {
     e.animT = 0;
     if (e.wind > 0) return;
     e.lunge = DOG.lunge;
-    e.lvx = e.wdir * DOG.lungeV;
+    e.lvx = e.wdir * DOG.lungeV * difficulty.speed;
     e.cool = DOG.cool + DOG.lunge;
     e.animT = 1 / 8; // salta al fotograma del salto
     spawnFx("dust", "puff", e.x + e.w / 2, e.y + e.h - 4);
@@ -1187,7 +1294,7 @@ function updateDog(e, dir, dt, touching) {
     return;
   }
   // Tras morder se queda un instante quieto (ventana para contraatacar).
-  if (!touching && e.cool < DOG.cool - 0.45) e.x += dir * DOG.speed * dt;
+  if (!touching && e.cool < DOG.cool - 0.45) e.x += dir * DOG.speed * difficulty.speed * dt;
   if (e.anim !== "lunge" || e.animT > animDur("perro", "lunge", 0.375)) setAnim(e, "run");
 }
 // Piquero: cuerpo a cuerpo con la pica (sin balas). Patrulla; al ver al héroe se acerca,
@@ -1244,7 +1351,7 @@ function updatePiquero(e, dir, dt, touching) {
       restartAnim(e, "thrust");
       return;
     }
-    const nx = e.x + dir * PIQ.speed * dt;
+    const nx = e.x + dir * PIQ.speed * difficulty.speed * dt;
     if (!touching && gap > PIQ.reach - 26 && Math.abs(nx - e.home) < PIQ.leash) {
       e.x = nx;
       setAnim(e, "walk");
@@ -1277,7 +1384,7 @@ function updateBoss(e, dir, dt) {
     shots.push({
       x: e.wdir > 0 ? e.x + e.w - 8 : e.x,
       y,
-      vx: e.wdir * (p2 ? 330 : 300),
+      vx: e.wdir * (p2 ? 330 : 300) * difficulty.projectiles,
       vy: 0,
       life: 3,
       good: false,
@@ -1558,7 +1665,7 @@ function llamaPromptVisible() {
     player.hp > 0 &&
     nearPile() < 0 &&
     world.loads > 0 &&
-    player.ammo <= MAX_AMMO - LLAMA_REFILL &&
+    player.ammo <= MAX_AMMO - difficulty.refill &&
     nearLlama()
   );
 }
@@ -1815,6 +1922,16 @@ function draw() {
   } else drawLegacyGround();
   drawPiles();
   if (player) {
+    if (world && !world.optionalCompleted) {
+      const o = STAGE_CONFIG.optional;
+      rect(o.x, o.y, o.w, o.h, "#e9b53b");
+      rect(o.x + 7, o.y + 7, 14, 14, "#a8301f");
+      ctx.font = "12px sans-serif";
+      ctx.fillStyle = "#f2e6cc";
+      ctx.textAlign = "center";
+      ctx.fillText("TERRAZA SECRETA", o.x + o.w / 2, o.y - 12);
+      ctx.textAlign = "left";
+    }
     drawShadows();
     drawLlama();
     drawEnemies(false);
@@ -1845,19 +1962,22 @@ function draw() {
       ctx.fillStyle = "#f8d48c";
       ctx.fillText("Manta vacía: J golpea con la macana · recarga en una apacheta (E)", 230, 128);
     }
-    if (player.x > 3400) {
+    if (player.x > piles[ARENA_PILE] - 100) {
       ctx.fillStyle = "#f8d48c";
       ctx.fillText("CAPITÁN DE LA EXPEDICIÓN", 580, 100);
     }
   }
 }
+// Con el HUD HTML superpuesto (vida y provisiones arriba a la izquierda, etapa y pausa a la
+// derecha), los avisos del canvas van por debajo de esa franja.
+const NOTICE_Y = 150;
 function drawCanvasNotices() {
   if (!player || state !== "playing") return;
   if (player.ammo === 0)
-    drawNotice("Manta vacía: J golpea con la macana · E recarga en la apacheta o la llama", 24);
-  else if (player.x > 3400 && enemies.some((e) => e.type === 3 && !e.dead))
-    drawNotice("CAPITÁN DE LA EXPEDICIÓN", 24, "#E9B53B");
-  drawTip(64);
+    drawNotice("Manta vacía: J golpea con la macana · E recarga en la apacheta o la llama", NOTICE_Y);
+  else if (player.x > piles[ARENA_PILE] - 100 && enemies.some((e) => e.type === 3 && !e.dead))
+    drawNotice("CAPITÁN DE LA EXPEDICIÓN", NOTICE_Y, "#E9B53B");
+  drawTip(NOTICE_Y + 44);
 }
 // Aviso del rescate automático (enseña la tecla H / el botón de la llama).
 function drawTip(y) {
@@ -1898,7 +2018,16 @@ const PROGRESS_KEY = "chankas.progress.v1",
   MAP_WALK = 2.2; // segundos que tarda el héroe entre dos etapas
 // armed: etapa elegida con un toque/clic previo (el segundo toque sobre ella la juega).
 const mapS = { progress: 0, selected: 0, heroT: 0, walk: null, msg: 0, armed: -1 };
-let mapOk = null;
+let mapOk = null, cloudProgress = 0;
+function restoreCloudProgress(progress) {
+  const completed = progress && progress.completedStages;
+  if (!Array.isArray(completed)) return;
+  cloudProgress = completed.includes(1) ? 1 : 0;
+  saveProgress(Math.max(mapS.progress, cloudProgress));
+}
+addEventListener("chankas-profile", event => restoreCloudProgress(event.detail && event.detail.progress));
+// El perfil puede haber llegado mientras el navegador descargaba game.js.
+if (COMPETITION && COMPETITION.getProgress) restoreCloudProgress(COMPETITION.getProgress());
 function mapReady() {
   if (mapOk === null) {
     try {
@@ -1922,7 +2051,7 @@ function loadProgress() {
     const raw = window.localStorage?.getItem(PROGRESS_KEY);
     if (raw != null) v = JSON.parse(raw)?.progress;
   } catch {}
-  return (mapS.progress = clampProgress(v));
+  return (mapS.progress = clampProgress(Math.max(Number(v) || 0, cloudProgress)));
 }
 function saveProgress(v) {
   mapS.progress = clampProgress(v);
@@ -1933,6 +2062,7 @@ function saveProgress(v) {
 // Abre el mapa. afterWin: la etapa 1 queda completada y el héroe camina a la siguiente.
 function openMap(afterWin = false) {
   if (!mapReady()) return false;
+  if (COMPETITION && state !== "won") COMPETITION.reset();
   if (afterWin) {
     saveProgress(Math.max(loadProgress(), 1));
     const last = stageCount() - 1;
@@ -2154,6 +2284,64 @@ function routeView(stage, pct, n) {
     fill: Math.round((marker - at(0)) * 10) / 10,
   };
 }
+// Disposición de los controles según el tipo de puntero (no el user agent): con puntero
+// grueso (táctil) los mandos van sobre el juego; con ratón, barra bajo el juego + teclado.
+// (COARSE se define junto a rescueTip.)
+function viewport() {
+  return {
+    w: Number(window.innerWidth) || W,
+    h: Number(window.innerHeight) || H,
+    coarse: !!(COARSE && COARSE.matches),
+  };
+}
+function controlLayout(vp) {
+  return vp && vp.coarse ? "touch" : "desktop";
+}
+// «Gira tu teléfono»: en táctil y en vertical, solo mientras se juega (o en su pausa).
+function needsRotate(layout, w, h, st) {
+  return layout === "touch" && Number(h) > Number(w) && (st === "playing" || st === "paused");
+}
+// Pausa automática al girar a vertical y reanudación al volver a horizontal (solo si la pausa
+// la puso el giro). held = la pausa actual es del giro.
+function rotateStep(st, rotate, held) {
+  if (rotate && st === "playing") return { act: "pause", held: true };
+  if (!held) return { act: null, held: false };
+  if (st !== "paused") return { act: null, held: false }; // se salió de la pausa por otra vía
+  return rotate ? { act: null, held: true } : { act: "resume", held: false };
+}
+// Cruceta: desplazamiento (dx, dy) desde el centro y radio r → teclas. Zona muerta central;
+// arriba = saltar. Abajo no tiene acción (el juego no agacha).
+function padKeys(dx, dy, r) {
+  const out = [];
+  if (!(r > 0) || !Number.isFinite(dx) || !Number.isFinite(dy)) return out;
+  const nx = dx / r,
+    ny = dy / r;
+  if (Math.hypot(nx, ny) < 0.25) return out;
+  if (nx <= -0.35) out.push("ArrowLeft");
+  else if (nx >= 0.35) out.push("ArrowRight");
+  if (ny <= -0.5) out.push("ArrowUp");
+  return out;
+}
+// Botón de disparo táctil: dispara el arma elegida; sin munición de esa arma, la huaraca
+// (que a su vez golpea con la macana si la manta está vacía).
+function fireKey(p) {
+  const w = (p && p.weapon) || "J";
+  if (w === "K" && p.fire > 0) return "KeyK";
+  if (w === "L" && p.bola > 0) return "KeyL";
+  return "KeyJ";
+}
+let rotateHeld = false;
+function stageInfo() {
+  return MAP && MAP.stages && MAP.stages.length
+    ? MAP.stages.map((s) => ({
+        id: s.id,
+        name: s.name,
+        place: s.place || "",
+        year: s.year || "",
+        fictional: !!s.fictional,
+      }))
+    : [{ id: "sacsayhuaman", name: "El paso de los andenes", place: "Cusco", year: "1536", fictional: false }];
+}
 function stageNames() {
   return MAP && MAP.stages && MAP.stages.length
     ? MAP.stages.map((s) => s.name)
@@ -2183,9 +2371,27 @@ function mapPanelView() {
   };
 }
 function uiView() {
-  const names = stageNames();
+  const names = stageNames(),
+    info = stageInfo(),
+    vp = viewport(),
+    layout = controlLayout(vp),
+    cur = info[Math.min(curStage, info.length - 1)];
   return {
+    layout,
+    rotate: needsRotate(layout, vp.w, vp.h, state),
+    // Recargar contextual (táctil): junto a una apacheta o a la llama con carga.
+    reload: !!(
+      state === "playing" &&
+      player &&
+      world &&
+      (nearPile() >= 0 || (nearLlama() && world.loads > 0))
+    ),
+    stages: info,
+    stagePlace: cur.place,
+    stageYear: cur.year,
     state,
+    difficulty: difficultyId,
+    difficultyName: difficulty.name,
     sound,
     hasMap: !!(MAP && MAP.stages && MAP.stages.length),
     hud: hudView(player, world, score),
@@ -2197,6 +2403,7 @@ function uiView() {
 }
 // Volver a la pantalla de título (la partida en curso se abandona).
 function goTitle() {
+  if (COMPETITION) COMPETITION.reset();
   state = "menu";
   player = null;
   world = null;
@@ -2226,6 +2433,14 @@ function uiAction(name, arg) {
       if (state !== "playing" && state !== "paused") return false;
       pause();
       return true;
+    case "suspend": // salir de pantalla completa, pestaña oculta: pausa sin alternar
+      // Una suspensión explícita retira la reanudación automática al volver a horizontal.
+      if (state === "paused" && rotateHeld) return !(rotateHeld = false);
+      if (state !== "playing") return false;
+      pause();
+      return true;
+    case "weapon":
+      return selectWeapon(["J", "K", "L"][arg]);
     case "resume":
       if (state !== "paused") return false;
       pause();
@@ -2274,7 +2489,14 @@ function loop(t) {
     }
     draw();
   }
-  if (UI) UI.sync();
+  if (UI) {
+    const vp = viewport(),
+      r = rotateStep(state, needsRotate(controlLayout(vp), vp.w, vp.h, state), rotateHeld);
+    rotateHeld = r.held;
+    if (r.act) pause(); // pausa al girar a vertical / reanuda al volver a horizontal
+    UI.sync();
+  }
+  if (COMPETITION) COMPETITION.sync(uiView());
   requestAnimationFrame(loop);
 }
 if (UI) UI.init({ view: uiView, action: uiAction });
