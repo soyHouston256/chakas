@@ -13,6 +13,7 @@ COPY tests/ ./tests/
 COPY server/*.cjs ./server/
 COPY scripts/ ./scripts/
 COPY deploy/404.html ./deploy/404.html
+COPY deploy/nginx/templates/security-headers.inc.template ./deploy/nginx/templates/
 RUN npm test && node scripts/build-dist.cjs /dist
 
 FROM nginxinc/nginx-unprivileged:1.30.5-alpine3.24@sha256:15c994d10d6d78658721c3bcafff14cb281fba2a4bdf9d5ba92c416a472516e3
