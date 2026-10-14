@@ -70,4 +70,5 @@ jobs:
           set -euo pipefail
           docker exec traefik wget -qO- http://chankas:8080/healthz | grep -qx ok
           curl -fsS https://chankas.maxflow.ink/healthz | grep -qx ok
+          curl -fsS https://chankas.maxflow.ink/api/health | grep -q '"ok":true'
           curl -fsSI https://chankas.maxflow.ink/ | grep -qi '^content-security-policy:'
