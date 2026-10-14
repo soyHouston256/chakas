@@ -990,6 +990,13 @@
       if (fire === 2) puff(g, mx + 4, my - 3, 3.5);
     };
   }
+  // Sin morrión (al caer derrotado): calva brillante, nuca con pelo y un rizo rebelde.
+  function baldHead(g, hx, hy) {
+    g.ellipse(hx + 5, hy + 1, 5.2, 3.6, 'C');
+    g.ellipse(hx + 1, hy + 2, 2, 3, 'n');
+    g.set(hx + 4, hy - 1, 'X'); g.set(hx + 5, hy - 1, 'X');
+    g.set(hx + 5, hy - 3, 'n'); g.set(hx + 6, hy - 4, 'n'); g.set(hx + 7, hy - 3, 'n');
+  }
   function capLeg(g, hx, hy, f, c) {
     var r = limb(g, hx, hy, f[0], f[1], 8, 8, 1, c, 'B', 3);
     g.dot(r[0], r[1], 'b', 3); // vuelta de la bota
@@ -1008,10 +1015,13 @@
     for (var r = 0; r < 5; r++) for (var k = 0; k < 15; k++) g.set(hipX - 7 + k, hipY - 1 + r, k % 3 === 0 ? 'g' : (k % 3 === 1 ? 'r' : 'R'));
     capTorso(g, 29 + bx, 36 + by, ln);
     var hx = 32 + bx + ln + (p.hdx || 0), hy = 27 + by + (p.hdy || 0);
+    if (p.bare) baldHead(g, hx, hy);
     g.blit(FACE_CAP, hx, hy);
     if (p.eye) g.set(hx + 6, hy + 2, p.eye);
-    plume(g, hx - 1, hy - 8, p.fs || 0);
-    g.blit(HELM_CAP, hx - 5, hy - 8);
+    if (!p.bare) {
+      plume(g, hx - 1, hy - 8, p.fs || 0);
+      g.blit(HELM_CAP, hx - 5, hy - 8);
+    }
     g.rect(hx + 1, hy + 9, 9, 1, 'w'); // cuello de camisa
     if (p.item) p.item(g);
     var af;
@@ -1071,6 +1081,13 @@
             if (i === 3) g.line(chx + 4, chy + 1, chx + 7, chy + 2, 'k', 1); // ceño fruncido
           }
         };
+      case 'dizzy':
+        // Sin casco, tambaleándose con los ojos en cruz (la espada cuelga floja).
+        var Z = [[-2, -3, 0], [-1, -1, 1], [0, 1, 0], [-1, -1, -1]][i];
+        return { bare: true, bx: Z[0], lean: Z[1], by: 1, fb: [30, 69], ff: [42, 69], hb: [25 + Z[2], 38 + i % 2], hf: [47 - Z[2], 37 - i % 2], hdx: Z[2], eye: 'x', after: function (g, af) { sword(af[2], af[3], 80 + Z[2] * 15)(g); } };
+      case 'ko':
+        // Fulminado de espaldas: brazos y piernas abiertos (el juego lo gira y lo tumba).
+        return { bare: true, bx: -1, lean: -2, fb: [29, 69], ff: [49, 61], hb: [25, 28], hf: [42, 55], hdx: -1, eye: 'x', after: function (g, af) { sword(af[2], af[3], 75)(g); } };
       case 'defeated':
         if (i === 0) return { bx: -1, lean: -2, by: 2, fb: [31, 69], ff: [42, 69], hb: [27, 50], hf: [44, 54], eye: 'x', fs: 2, after: function (g, af) { sword(af[2], af[3], 95)(g); } };
         return { by: 9, lean: 1, hdy: 2, hdx: 1, fb: [27, 69], ff: [44, 69], hb: [30, 60], hf: [47, 52], eye: 'x', fs: -2, item: sword(48, 52, 90) };
@@ -1095,7 +1112,21 @@
       charge: A(4, 12, true, capBuild('charge')),
       hurt: A(2, 8, true, capBuild('hurt')),
       spat: A(4, 8, false, capBuild('spat')),
-      defeated: A(3, 3, false, capBuild('defeated'))
+      defeated: A(3, 3, false, capBuild('defeated')),
+      dizzy: A(4, 8, true, capBuild('dizzy')),
+      ko: A(1, 1, false, capBuild('ko'))
+    }
+  };
+  // Morrión suelto del capitán (sale volando al derrotarlo). Centro = centro del casco.
+  KINDS.morion = {
+    box: { w: 40, h: 20 }, anchor: 'center', scale: 2, res: 2, fw: 68, fh: 40, ax: 44, ay: 29, def: 'spin',
+    anims: {
+      spin: A(1, 1, false, function () {
+        var g = new HGrid(34, 20);
+        plume(g, 16, 10, 1);
+        g.blit(HELM_CAP, 12, 10);
+        return g.finishHi();
+      })
     }
   };
 

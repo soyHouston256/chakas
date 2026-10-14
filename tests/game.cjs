@@ -60,6 +60,9 @@ function makeGame(windowGlobals = {}) {
   return r;
 }
 
+// Deja correr la escena de la caída del capitán (≈3,2 s) hasta la tarjeta de victoria.
+const OUTRO_RUN = "for (let i=0;i<400 && state==='playing' && world.outro;i++) update(1/60)";
+
 // 1) Lógica de juego (sin arte: fallback a rectángulos)
 let run = makeGame();
 run("reset()");
@@ -86,6 +89,10 @@ assert.equal(run("state"), "lost");
 run(
   "reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); const boss=enemies.find(e=>e.type===3); boss.hp=1; shots.push({x:boss.x,y:boss.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
 );
+// El jefe cae en una escena corta: la victoria no es inmediata.
+assert.equal(run("state"), "playing");
+assert.equal(run("!!world.outro"), true);
+run(OUTRO_RUN);
 assert.equal(run("state"), "won");
 assert.equal(run("score"), 1800);
 // El perro (type 0) tiene hitbox bajo y apoya en el suelo.
@@ -112,12 +119,14 @@ run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var B=enemi
   shots.length=0;
   shots.push({x:player.x+5,y:player.y+20,vx:0,vy:0,life:1,good:false});
   shots.push({x:B.x+10,y:B.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)`);
+run(OUTRO_RUN);
 assert.equal(run("state"), "won");
 // (b) piedra primero, bala después
 run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); B=enemies.find(e=>e.type===3); B.hp=1; player.hp=1; player.inv=0;
   shots.length=0;
   shots.push({x:B.x+10,y:B.y+20,vx:0,vy:0,life:1,good:true,damage:1});
   shots.push({x:player.x+5,y:player.y+20,vx:0,vy:0,life:1,good:false}); update(.016)`);
+run(OUTRO_RUN);
 assert.equal(run("state"), "won");
 // hit() fuera de "playing" no hace nada.
 run("state='won'; player.hp=3; player.inv=0; hit()");
@@ -227,6 +236,7 @@ run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var M=enemi
 assert.equal(run("M.hp"), 1);
 assert.equal(run("shots.length"), 0);
 run("player.cool=0; shoot(false)");
+run(OUTRO_RUN);
 assert.equal(run("state"), "won");
 // La macana no alcanza a distancia.
 run(
@@ -448,6 +458,8 @@ assert.equal(run("state"), "playing");
 run(
   "enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var Bm=enemies.find(e=>e.type===3); Bm.hp=1; shots.push({x:Bm.x,y:Bm.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(.016)",
 );
+assert.equal(run("state"), "playing");
+run(OUTRO_RUN);
 assert.equal(run("state"), "won");
 assert.equal(JSON.parse(store.data["chankas.progress.v1"]).progress, 1);
 run("document.querySelector('#start').onclick()");
@@ -1097,6 +1109,7 @@ assert.equal(run("llamaS.anim"), "worry");
 run("player.hp=6; llamaS.still=0; for (let i=0;i<5*60;i++){ player.x=1000; player.kb=0; player.inv=999; world.llama=920; llamaS.prev=920; update(1/60); }");
 assert.equal(run("llamaS.anim"), "look");
 run(bossScene + "CP.hp=1; applySpitImpact(CP,{vx:400})");
+run(OUTRO_RUN);
 assert.deepEqual(J("[state, llamaS.anim]"), ["won", "celebrate"]);
 // HUD: cargas, progreso de la recarga y etiqueta accesible; la línea del canvas cabe.
 run(spitScene + "world.spitCharges=1; world.spitRecharge=3");
@@ -1355,6 +1368,64 @@ assert.deepEqual(JSON.parse(JSON.stringify(payload)), {completed:true,kills:12,s
 assert.equal(run("score"), 3180);
 run("goTitle()");
 assert.equal(abandoned, 1);
+// Caída del capitán: escena de ≈3 s antes de la victoria. Sin control, sin daño, sin balas,
+// los soldados huyen; el reloj se fija al derrotarlo y los ganchos de victoria saltan una vez.
+let finished = 0;
+payload = null;
+run = makeGame({ChankasCompetition: {
+ getDifficulty:()=>"inka", begin:()=>{}, finish:m=>{finished++; payload=m;}, reset:()=>{}, sync:()=>{},
+}});
+run(`reset(); world.time=90; world.kills=5; var FB=enemies.find(e=>e.type===3); player.x=FB.x-200; player.inv=0; cam=FB.x-500;
+  enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var FL=enemies[11]; FL.dead=false; FL.x=FB.x-400;
+  FB.hp=1; shots.length=0; shots.push({x:FB.x+10,y:FB.y+20,vx:0,vy:0,life:1,good:true,damage:1});
+  shots.push({x:player.x+300,y:player.y+20,vx:-240,vy:0,life:3,good:false}); update(1/60)`);
+assert.deepEqual(J("[state, FB.dead, !!world.outro, shots.length]"), ["playing", true, true, 0]);
+assert.equal(finished, 0, "la victoria no salta al instante");
+const scoreAtKill = run("score"),
+  timeAtKill = run("world.time");
+// Sin control ni daño durante la escena.
+run("var X0=player.x; keys.add('ArrowRight'); keys.add('KeyJ'); player.inv=0; update(1/60); hit(player.x); hit(player.x)");
+assert.deepEqual(J("[player.x===X0, player.hp, shots.length]"), [true, 6, 0]);
+run("keys.clear()");
+// Los enemigos restantes no atacan: el que quedaba huye y desaparece.
+run("for (let i=0;i<60;i++) update(1/60)");
+assert.equal(run("FL.flee < 1 && FL.x < FB.x-400"), true);
+assert.equal(run("shots.filter(s=>!s.good).length"), 0);
+// La pausa congela la escena y no la rompe.
+run("pause(); var T0=world.outro.t");
+assert.equal(run("state"), "paused");
+run("pause(); update(1/60)");
+assert.ok(run("world.outro.t - T0") < 0.02);
+// El capitán cae de espaldas (girado 90°), lejos del héroe; después llega la victoria.
+run("for (let i=0;i<60 && world.outro.t < OUTRO.land + .1;i++) update(1/60)");
+assert.deepEqual(J("[state, world.outro.landed, Math.abs(FB.rot)===Math.PI/2, FB.x > FB.home]"), ["playing", true, true, true]);
+assert.equal(finished, 0);
+assert.equal(run("FL.gone"), true);
+assert.equal(run("world.time"), timeAtKill, "el reloj de la partida no cuenta la escena");
+assert.equal(run("score"), scoreAtKill);
+run(OUTRO_RUN);
+assert.equal(run("state"), "won");
+assert.equal(finished, 1);
+assert.equal(payload.durationMs, Math.round(timeAtKill * 1000));
+run("for (let i=0;i<120;i++) update(1/60); win(); draw()");
+assert.equal(finished, 1, "los ganchos de victoria saltan una sola vez");
+// Duración total ≈3,2 s (2–3,5 s), más corta con «reducir movimiento».
+const outroFrames = (rm) => {
+  const g = makeGame({ matchMedia: () => ({ matches: rm }) });
+  g(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var B=enemies.find(e=>e.type===3); B.hp=1;
+    shots.push({x:B.x+10,y:B.y+20,vx:0,vy:0,life:1,good:true,damage:1}); update(1/60)`);
+  let n = 0;
+  while (g("state") === "playing" && n < 400) {
+    g("update(1/60); draw()");
+    n++;
+  }
+  assert.equal(g("state"), "won");
+  return n / 60;
+};
+const tFull = outroFrames(false),
+  tQuick = outroFrames(true);
+assert.ok(tFull >= 2.5 && tFull <= 3.5, "escena " + tFull);
+assert.ok(tQuick < tFull && tQuick >= 1.5, "reducida " + tQuick);
 run.fire("chankas-profile", {detail:{progress:{completedStages:[1]}}});
 assert.equal(run("mapS.progress"), 1);
 run("reset()");
