@@ -13,7 +13,10 @@ Abre `index.html` directamente en tu navegador. No requiere instalación ni cone
 - E cerca de una apacheta: llenar la manta (24 piedras). E junto a la llama: +8 piedras de sus
   alforjas (5 cargas, que se reponen en cada apacheta nueva).
 - P o Esc: pausa (menú con inventario). Enter / flechas en el título, la pausa y el mapa.
-  Controles táctiles debajo del juego.
+  Con ratón, barra de controles debajo del juego.
+- Móvil (en horizontal): cruceta a la izquierda; SALTAR y LANZAR a la derecha; encima, el arma
+  (tocar = siguiente arma), la llama y Recargar cuando sirve. Mandos translúcidos y sin zoom.
+- Rótulos breves al empezar y ante el capitán: Enter o un toque los omiten.
 - Derrota al capitán al final para ganar. Si pierdes tus seis corazones, puedes reiniciar.
 
 La llama sigue al protagonista y escupe cuando se lo ordenas; los enemigos escupidos se limpian la cara indignados y el capitán tiene su propia reacción. Si llegas al capitán sin haberla usado, la llama escupe una vez por su cuenta y te enseña la tecla (solo una vez por partida). Los enemigos tienen roles de aproximación, tiro y patrulla. No hay sangre. Activa el sonido con el botón superior.

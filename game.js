@@ -103,6 +103,68 @@ const ARENA_PILE = piles.length - 1,
   ARENA_RELOADS = 1, // recargas en la apacheta de la arena por vida, con el jefe vivo
   BOSS_RESPAWN_HP = 0.6; // al reaparecer en la arena, el jefe recupera hasta el 60 % si tenía menos
 const platforms = STAGE_CONFIG.platforms;
+// Movimiento del héroe: aceleración/frenado cortos (no instantáneos), tiempo de coyote, salto
+// almacenado y altura variable (soltar pronto = salto corto). La altura máxima no cambia.
+const MOVE = {
+  speed: 230,
+  accel: 1900, // en el suelo: ~0,12 s hasta la velocidad máxima
+  decel: 2600, // frenado al soltar
+  turn: 3400, // cambio de sentido
+  air: 0.72, // control en el aire (factor)
+  jump: 510,
+  cut: 210, // al soltar el salto mientras sube, la subida se corta a esta velocidad
+  coyote: 0.1,
+  buffer: 0.12,
+};
+// Cámara: el héroe arranca en el centro-izquierda (~35 % del ancho) con mirada hacia
+// delante; nunca queda bajo la cruceta táctil. Mirando atrás, el encuadre se desliza suave.
+const START_X = 340,
+  LEFT_WALL = 96, // ni volviendo al inicio queda el héroe bajo la cruceta (≥10 % del ancho)
+  CAM = { lead: 340, back: 500, ease: 2.2 };
+// Sensación de golpe: congelado breve (hit-stop) y sacudida pequeña (sin «reducir movimiento»).
+let hitStop = 0,
+  shakeT = 0,
+  shakeMag = 0;
+function kick(stop, mag, dur) {
+  hitStop = Math.max(hitStop, stop);
+  if (reducedMotion()) return;
+  shakeMag = shakeT > 0 ? Math.max(shakeMag, mag) : mag;
+  shakeT = Math.max(shakeT, dur);
+}
+function followCam(dt) {
+  const target = player.face < 0 ? CAM.back : CAM.lead;
+  world.camLead += (target - world.camLead) * Math.min(1, dt * CAM.ease);
+  cam = Math.max(0, Math.min(END - W, player.x - world.camLead));
+}
+function snapCam() {
+  world.camLead = CAM.lead;
+  cam = Math.max(0, Math.min(END - W, player.x - CAM.lead));
+}
+// Narración ligera: rótulos cortos que no detienen el juego (Enter o un toque los omiten).
+const STORY = {
+  intro: [
+    { who: "CUSCO, 1536", text: "Manco Inca se alzó contra los invasores. Hoy el camino a Sacsayhuamán es tuyo.", t: 3.8 },
+    { who: "TU LLAMA", text: "Yo cargo las piedras, tú las lanzas. Si fallas… escupo yo.", t: 3.4 },
+  ],
+  boss: [
+    { who: "CAPITÁN", text: "¡En nombre de Su Majestad, esta fortaleza es nuestra!", t: 2.8 },
+    { who: "CHANKA", text: "Curioso… la levantaron mis abuelos. Y sin planos.", t: 2.8 },
+  ],
+};
+function tell(key) {
+  world.story = { lines: STORY[key], i: 0, t: 0 };
+}
+function skipStory() {
+  if (!world || !world.story) return false;
+  world.story = null;
+  return true;
+}
+function updateStory(dt) {
+  const st = world.story;
+  if (!st || (st.t += dt) < st.lines[st.i].t) return;
+  st.t = 0;
+  if (++st.i >= st.lines.length) world.story = null;
+}
 // Contexto de audio solo con el sonido activado (todos los efectos pasan por aquí).
 function audioCtx() {
   if (!sound) return null;
@@ -247,11 +309,16 @@ function reset() {
   difficulty = DIFFICULTIES[difficultyId];
   if (COMPETITION) COMPETITION.begin(difficultyId);
   player = {
-    x: 70,
+    x: START_X,
     y: GROUND - 58,
     w: 28,
     h: 58,
+    vx: 0,
     vy: 0,
+    coyote: 0,
+    jumpBuf: 0,
+    jumpHeld: false,
+    jumping: false,
     hp: MAX_HP,
     ammo: MAX_AMMO,
     fire: difficulty.fire,
@@ -271,11 +338,14 @@ function reset() {
   shots = [];
   particles = [];
   score = 0;
-  cam = 0;
+  hitStop = shakeT = 0;
   world = {
     time: 0,
-    llama: 20,
-    checkpoint: 70,
+    llama: START_X - 80,
+    checkpoint: START_X,
+    camLead: CAM.lead,
+    story: null,
+    bossTold: false,
     cpPile: -1,
     deaths: 0,
     loads: LLAMA_LOADS,
@@ -332,6 +402,8 @@ function reset() {
     dead: false,
     ...animFields(),
   });
+  snapCam();
+  tell("intro");
   state = "playing";
   overlay.style.display = "none";
   restartBtn.hidden = true;
@@ -345,7 +417,10 @@ function respawn() {
   Object.assign(player, {
     x: world.checkpoint,
     y: GROUND - player.h,
+    vx: 0,
     vy: 0,
+    jumpBuf: 0,
+    jumping: false,
     kb: 0,
     hp: MAX_HP,
     ammo: Math.max(player.ammo, RESPAWN_AMMO),
@@ -397,7 +472,9 @@ function respawn() {
   llamaS.react = "";
   llamaS.reactT = 0;
   restartAnim(llamaS, "idle");
-  cam = Math.max(0, Math.min(END - W, player.x - 280));
+  hitStop = shakeT = 0;
+  world.story = null;
+  snapCam();
   state = "playing";
   overlay.style.display = "none";
   restartBtn.hidden = true;
@@ -590,12 +667,25 @@ function selectWeapon(w) {
   player.weapon = w;
   return true;
 }
+// Táctil: un solo botón de arma que rota huaraca → fuego → boleadora (salta las vacías).
+function nextWeapon(p) {
+  if (!p) return "J";
+  const order = ["J", "K", "L"],
+    i = order.indexOf((p && p.weapon) || "J");
+  for (let n = 1; n <= 3; n++) {
+    const w = order[(i + n) % 3];
+    if (w === "J" || (w === "K" && p.fire > 0) || (w === "L" && p.bola > 0)) return w;
+  }
+  return "J";
+}
 // Mantener pulsado: la tecla se elige al tocar (pick) y se suelta al levantar el dedo.
+// Mientras se pulsa, el mando queda opaco (en reposo es translúcido: ver style.css).
 function holdControl(b, pick) {
   let held = null;
   const release = () => {
     if (held) keys.delete(held);
     held = null;
+    b.classList?.remove("is-pressed");
   };
   b.onpointerdown = (e) => {
     e.preventDefault();
@@ -607,6 +697,7 @@ function holdControl(b, pick) {
     release();
     held = k;
     keys.add(k);
+    b.classList?.add("is-pressed");
   };
   b.onpointerup = b.onpointercancel = b.onlostpointercapture = release;
 }
@@ -644,29 +735,39 @@ function bindPad(el) {
 }
 document.querySelectorAll("[data-key]").forEach((b) =>
   holdControl(b, () => {
-    // En el modo táctil, Huaraca/Fuego/Bola eligen el arma del botón de disparo.
-    if (b.dataset.weapon && controlLayout(viewport()) === "touch") return void selectWeapon(b.dataset.weapon);
+    // En el modo táctil se ve solo el arma elegida: tocarla pasa a la siguiente.
+    if (b.dataset.weapon && controlLayout(viewport()) === "touch") return void selectWeapon(nextWeapon(player));
     return b.dataset.key;
   }),
 );
 // Activación sin puntero (lector de pantalla, teclado: click con detail 0): elige el arma.
 document.querySelectorAll("[data-weapon][data-key]").forEach((b) => {
   b.onclick = (e) => {
-    if (e && e.detail === 0) selectWeapon(b.dataset.weapon);
+    if (!e || e.detail !== 0) return;
+    // En táctil solo se ve el arma elegida: activarla (lector de pantalla) pasa a la siguiente.
+    selectWeapon(controlLayout(viewport()) === "touch" ? nextWeapon(player) : b.dataset.weapon);
   };
 });
 document.querySelectorAll("[data-fire]").forEach((b) => holdControl(b, () => fireKey(player)));
 document.querySelectorAll("[data-pad]").forEach(bindPad);
 function burst(x, y, color, n = 12) {
   for (let i = 0; i < n; i++)
-    particles.push({
+    addParticle({
       x,
       y,
       vx: (Math.random() - 0.5) * 240,
       vy: -Math.random() * 230,
       t: 0.6,
+      life: 0.6,
+      s: 3 + Math.random() * 3,
       color,
     });
+}
+// Piedra de fuego: llamarada al impactar (sube, sin gravedad) y unas brasas que caen.
+function flame(x, y) {
+  for (let i = 0; i < 14; i++)
+    addParticle({ x: x + (Math.random() - 0.5) * 14, y, vx: (Math.random() - 0.5) * 160, vy: -60 - Math.random() * 160, t: 0.35 + Math.random() * 0.25, life: 0.6, g: -120, drag: 3, s: 5 + Math.random() * 6, color: i % 3 ? "#ff7b1c" : "#ffc93c" });
+  burst(x, y, "#f6d24c", 6);
 }
 // Daño al héroe. srcX = centro horizontal de lo que golpea (empuje en sentido contrario).
 // Fuera de "playing" no hace nada: si el jefe cae en el mismo frame, gana la victoria.
@@ -685,8 +786,10 @@ function hit(srcX, push = 260) {
     player.vy = -240;
     player.ground = false;
   }
+  player.vx = 0;
   restartAnim(player, player.hp <= 0 ? "dead" : "hurt");
   burst(player.x, player.y, "#e9b25f");
+  kick(0.05, 6, 0.22);
   tone(130);
   // La llama gira la cabeza hacia el guerrero, sorprendida.
   llamaReact("surprise", 0.6, pc >= world.llama + 18 ? 1 : -1);
@@ -872,16 +975,10 @@ function updateOutro(dt) {
   fallPlayer(dt, wasGround);
   setAnim(player, player.ground ? "idle" : player.vy < 0 ? "jump" : "fall");
   world.llama += (player.x - 80 - world.llama) * dt * 3;
-  for (const p of particles) {
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.vy += 700 * dt;
-    p.t -= dt;
-  }
-  particles = particles.filter((p) => p.t > 0);
+  updateParticles(dt);
   updateLlama(dt);
   updateFx(dt);
-  cam = Math.max(0, Math.min(END - W, player.x - 280));
+  followCam(dt);
   if (outroDone()) win();
 }
 // Morrión suelto: vuela girando, rebota una vez y queda en el suelo balanceándose.
@@ -917,6 +1014,12 @@ function outroShake() {
   if (!o || o.shake <= 0 || reducedMotion() || state !== "playing") return [0, 0];
   const a = Math.min(4, 4 * o.shake * 4);
   return [Math.round(Math.sin(o.t * 97) * a), Math.round(Math.cos(o.t * 71) * a * 0.6)];
+}
+// Sacudida corta de los golpes (amplitud que decae; nada con «reducir movimiento»).
+function hitShake() {
+  if (shakeT <= 0 || state !== "playing" || reducedMotion()) return [0, 0];
+  const a = shakeMag * Math.min(1, shakeT / 0.12);
+  return [Math.round((Math.random() * 2 - 1) * a), Math.round((Math.random() * 2 - 1) * a * 0.6)];
 }
 // Morrión en vuelo y estrellitas sobre el capitán tumbado (coordenadas del mundo).
 function drawOutro() {
@@ -1031,8 +1134,10 @@ function throwBola() {
 }
 function damageEnemy(e, dmg, vx, fxX, fxY, spark = "hit_spark") {
   e.hp -= dmg;
-  e.flash = 0.1;
+  e.flash = 0.12;
   spawnFx(spark, "burst", fxX, fxY);
+  if (e.hp > 0) kick(dmg >= 3 ? 0.06 : 0.035, dmg >= 3 ? 4 : 2, 0.12);
+  else if (e.type !== 3) kick(0.075, 5, 0.2); // el capitán tiene su propia escena
   if (e.hp <= 0) {
     e.dead = true;
     e.wind = 0;
@@ -1298,6 +1403,12 @@ function update(dt) {
   // Escena de la caída del capitán: sin control ni reloj de partida (ver updateOutro).
   if (world.outro) return updateOutro(dt);
   world.time += dt;
+  updateStory(dt);
+  if (keys.has("Enter")) skipStory();
+  if (!world.bossTold && player.x > piles[ARENA_PILE] - 60 && arenaLive()) {
+    world.bossTold = true;
+    tell("boss");
+  }
   if (!world.optionalCompleted && overlap(player, STAGE_CONFIG.optional)) {
     world.optionalCompleted = true;
     score += 300;
@@ -1316,16 +1427,30 @@ function update(dt) {
     (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) -
     (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
   if (player.hp <= 0) direction = 0;
-  player.x = Math.max(0, Math.min(END - 40, player.x + (direction * 230 + player.kb) * dt));
+  // Aceleración y frenado cortos: arranque ágil sin patinar ni frenar en seco.
+  const rate = !direction ? MOVE.decel : player.vx * direction < 0 ? MOVE.turn : MOVE.accel;
+  player.vx = approach(player.vx, direction * MOVE.speed, rate * (player.ground ? 1 : MOVE.air) * dt);
+  player.x = Math.max(LEFT_WALL, Math.min(END - 40, player.x + (player.vx + player.kb) * dt));
+  if ((player.x <= LEFT_WALL && player.vx < 0) || (player.x >= END - 40 && player.vx > 0)) player.vx = 0;
   player.kb *= Math.max(0, 1 - 7 * dt);
   if (Math.abs(player.kb) < 5) player.kb = 0;
   if (direction) player.face = direction;
-  if ((keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW")) && player.ground) {
-    player.vy = -510;
+  // Salto: se guarda la pulsación (buffer) y vale un instante tras dejar el borde (coyote).
+  const jumpDown = keys.has("Space") || keys.has("ArrowUp") || keys.has("KeyW");
+  if (jumpDown && !player.jumpHeld) player.jumpBuf = MOVE.buffer;
+  player.jumpHeld = jumpDown;
+  player.coyote = player.ground ? MOVE.coyote : player.coyote - dt;
+  if (player.jumpBuf > 0 && player.coyote > 0 && player.hp > 0) {
+    player.vy = -MOVE.jump;
     player.ground = false;
+    player.jumping = true;
+    player.jumpBuf = player.coyote = 0;
     spawnFx("dust", "puff", player.x + player.w / 2, player.y + player.h - 6);
     tone(300);
   }
+  player.jumpBuf -= dt;
+  // Soltar pronto = salto corto.
+  if (player.jumping && !jumpDown && player.vy < -MOVE.cut) player.vy = -MOVE.cut;
   fallPlayer(dt, wasGround);
   if (keys.has("KeyJ")) shoot(false);
   if (keys.has("KeyK")) shoot(true);
@@ -1405,7 +1530,12 @@ function update(dt) {
   for (const s of shots) {
     s.x += s.vx * dt;
     s.y += s.vy * dt;
-    if (s.fire) s.vy += 200 * dt;
+    if (s.fire) {
+      s.vy += 200 * dt;
+      // Estela de brasas (barata: una partícula corta por fotograma como mucho).
+      if (s.good && Math.random() < 0.7)
+        addParticle({ x: s.x + 4, y: s.y + 4, vx: -s.vx * 0.06 + (Math.random() - 0.5) * 30, vy: -30 - Math.random() * 40, t: 0.28, life: 0.28, g: -40, s: 3 + Math.random() * 3, color: Math.random() < 0.5 ? "#ffc93c" : "#ff7b1c" });
+    }
     if (s.bola) {
       s.vy += 700 * dt;
       if (s.y > GROUND - 6) s.life = 0;
@@ -1430,7 +1560,8 @@ function update(dt) {
             break;
           }
           world.hits++;
-          burst(s.x, s.y, s.fire ? "#f09e47" : "#eddb9c", 5);
+          if (s.fire) flame(s.x + 4, s.y + 4);
+          else burst(s.x, s.y, "#eddb9c", 5);
           if (s.bola) {
             e.stun = e.type === 3 ? 0.7 : 2;
             e.wind = 0;
@@ -1446,18 +1577,42 @@ function update(dt) {
     }
   }
   shots = shots.filter((s) => s.life > 0);
-  for (const p of particles) {
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.vy += 700 * dt;
-    p.t -= dt;
-  }
-  particles = particles.filter((p) => p.t > 0);
+  updateParticles(dt);
   updateLlama(dt);
   heroAnim(direction);
   updateFx(dt);
-  cam = Math.max(0, Math.min(END - W, player.x - 280));
+  followCam(dt);
   resolveDeath();
+}
+function approach(v, target, step) {
+  return v < target ? Math.min(target, v + step) : Math.max(target, v - step);
+}
+// Partículas: polvo, chispas y brasas (tamaño, gravedad y vida propios; con tope).
+const MAX_PARTICLES = 180;
+function updateParticles(dt) {
+  let n = 0;
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += (p.g ?? 700) * dt;
+    if (p.drag) p.vx *= Math.max(0, 1 - p.drag * dt);
+    if ((p.t -= dt) > 0) particles[n++] = p;
+  }
+  particles.length = n;
+}
+function addParticle(p) {
+  if (particles.length < MAX_PARTICLES) particles.push(p);
+}
+// Derrota: nube de polvo y estrellitas de caricatura (sin sangre).
+function puff(x, y, big = false) {
+  const n = big ? 14 : 9;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+    const v = 70 + Math.random() * 90;
+    addParticle({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.6 - 30, t: 0.45 + Math.random() * 0.25, life: 0.7, g: -40, drag: 4, s: 6 + Math.random() * 6, color: i % 2 ? "#e8dcc0" : "#cdbd99" });
+  }
+  for (let i = 0; i < (big ? 6 : 4); i++)
+    addParticle({ x, y: y - 10, vx: (Math.random() - 0.5) * 220, vy: -180 - Math.random() * 140, t: 0.6, life: 0.6, g: 520, s: 4, color: i % 2 ? "#f6d24c" : "#fff5b8", star: true });
 }
 // Gravedad del héroe y apoyo en el suelo o en una terraza (polvo al aterrizar).
 function fallPlayer(dt, wasGround) {
@@ -1479,6 +1634,7 @@ function fallPlayer(dt, wasGround) {
     player.y = floor - player.h;
     player.vy = 0;
     player.ground = true;
+    player.jumping = false;
     if (!wasGround) spawnFx("dust", "puff", player.x + player.w / 2, player.y + player.h - 6);
   }
 }
@@ -1688,6 +1844,7 @@ function defeat(e, vx) {
   e.fvy = -520 - Math.random() * 80;
   e.spin = side * (9 + Math.random() * 4);
   spawnFx("dust", "puff", e.x + e.w / 2, e.y + e.h - 6);
+  puff(e.x + e.w / 2, e.y + e.h / 2, e.type === 3);
 }
 function heroAnim(direction) {
   let a;
@@ -1695,7 +1852,7 @@ function heroAnim(direction) {
   else if (player.inv > 1.2) a = "hurt";
   else if (player.throwT > 0) a = "throw";
   else if (!player.ground) a = player.vy < 0 ? "jump" : "fall";
-  else a = direction ? "run" : "idle";
+  else a = direction || Math.abs(player.vx) > 60 ? "run" : "idle";
   setAnim(player, a);
 }
 function updateLlama(dt) {
@@ -2127,6 +2284,7 @@ function drawPlayer() {
 }
 function drawShots() {
   for (const s of shots) {
+    drawTrail(s);
     if (SP) {
       resetSpr();
       const kind = s.bola
@@ -2159,6 +2317,28 @@ function drawShots() {
       );
   }
 }
+function drawParticles() {
+  for (const p of particles) {
+    const sz = p.s || 4;
+    ctx.globalAlpha = p.life ? Math.min(1, (p.t / p.life) * 1.8) : 1;
+    if (p.star) {
+      rect(p.x - 1, p.y - 4, 2, 8, p.color);
+      rect(p.x - 4, p.y - 1, 8, 2, p.color);
+    } else rect(p.x - sz / 2, p.y - sz / 2, sz, sz, p.color);
+  }
+  ctx.globalAlpha = 1;
+}
+// Estela corta detrás de piedras y bolas (posiciones previas estimadas por la velocidad).
+function drawTrail(s) {
+  if (s.spit || !s.good) return;
+  const col = s.fire ? "#ff9e49" : s.bola ? "#c9a46a" : "#f4ead3";
+  for (let k = 1; k <= 3; k++) {
+    ctx.globalAlpha = 0.42 - k * 0.12;
+    const z = s.fire ? 6 - k : 5 - k;
+    rect(s.x + 4 - s.vx * 0.014 * k - z / 2, s.y + 4 - s.vy * 0.014 * k - z / 2, z, z, col);
+  }
+  ctx.globalAlpha = 1;
+}
 function drawFx() {
   if (!SP) return;
   for (const f of fx) {
@@ -2170,9 +2350,10 @@ function drawFx() {
 }
 function draw() {
   const camR = Math.round(cam),
-    [shX, shY] = outroShake();
+    [shX, shY] = outroShake(),
+    [hkX, hkY] = hitShake();
   ctx.save();
-  ctx.translate(shX, shY); // sacudida del golpe final (0 fuera de la escena)
+  ctx.translate(shX + hkX, shY + hkY); // sacudida del golpe final (0 fuera de la escena)
   if (BG) BG.drawBackground(ctx, camR, renderT, BG_OPTS);
   else drawLegacyBackground();
   ctx.save();
@@ -2201,7 +2382,7 @@ function draw() {
     drawShots();
     drawFx();
     drawOutro();
-    for (const p of particles) rect(p.x, p.y, 4, 4, p.color);
+    drawParticles();
     drawSpitReactions();
     if (!world.outro) drawPrompts();
   }
@@ -2210,7 +2391,7 @@ function draw() {
   ctx.restore();
   drawOutroScreen();
   if (UI) return drawCanvasNotices(); // el HUD vive en HTML (ui.js); aquí solo avisos
-  drawTip(140);
+  drawTip(drawStory(140) ? 216 : 140);
   rect(18, 18, HUD_W, 58, "#102b30e8");
   ctx.font = "bold 16px sans-serif";
   ctx.fillStyle = "#f3d394";
@@ -2238,11 +2419,46 @@ function draw() {
 const NOTICE_Y = 150;
 function drawCanvasNotices() {
   if (!player || state !== "playing" || world.outro) return;
+  const y = drawStory(NOTICE_Y) ? NOTICE_Y + 76 : NOTICE_Y;
   if (player.ammo === 0)
-    drawNotice("Manta vacía: J golpea con la macana · E recarga en la apacheta o la llama", NOTICE_Y);
+    drawNotice("Manta vacía: J golpea con la macana · E recarga en la apacheta o la llama", y);
   else if (player.x > piles[ARENA_PILE] - 100 && enemies.some((e) => e.type === 3 && !e.dead))
-    drawNotice("CAPITÁN DE LA EXPEDICIÓN", NOTICE_Y, "#E9B53B");
-  drawTip(NOTICE_Y + 44);
+    drawNotice("CAPITÁN DE LA EXPEDICIÓN", y, "#E9B53B");
+  drawTip(y + 44);
+}
+// Rótulo de narración: quién habla (oro) y una frase; aparece y se va con un fundido corto.
+function drawStory(y) {
+  const st = world && world.story;
+  if (!st || !player || state !== "playing" || world.outro) return false;
+  const line = st.lines[st.i];
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, st.t * 6, (line.t - st.t) * 5));
+  ctx.font = PROMPT_FONT;
+  const w = Math.round(Math.min(W - 40, Math.max(420, ctx.measureText(line.text).width + 36))),
+    h = 62,
+    x = Math.round(W / 2 - w / 2),
+    k = Math.min(promptScale, (W - 24) / w);
+  ctx.translate(W / 2, y);
+  ctx.scale(k, k);
+  ctx.translate(-W / 2, -y);
+  rect(x - 2, y - 2, w + 4, h + 4, "#E9B53B");
+  rect(x, y, w, h, "#0B080De8");
+  rect(x, y + h - 3, w, 3, "#A8301F");
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 13px 'Atkinson Hyperlegible', 'Segoe UI', sans-serif";
+  ctx.fillStyle = "#E9B53B";
+  ctx.fillText(line.who, x + 16, y + 18);
+  ctx.textAlign = "right";
+  ctx.font = "12px 'Atkinson Hyperlegible', 'Segoe UI', sans-serif";
+  ctx.fillStyle = "#A39B90";
+  ctx.fillText(COARSE && COARSE.matches ? "toca para omitir" : "ENTER omite", x + w - 14, y + 18);
+  ctx.textAlign = "left";
+  ctx.font = PROMPT_FONT;
+  ctx.fillStyle = "#F2E6CC";
+  ctx.fillText(line.text, x + 16, y + 41);
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
+  return true;
 }
 // Aviso del rescate automático (enseña la tecla H / el botón de la llama).
 function drawTip(y) {
@@ -2479,6 +2695,8 @@ function mapPointer(x, y) {
   return i;
 }
 canvas.onpointerdown = (e) => {
+  // Jugando, tocar el escenario omite el rótulo de narración.
+  if (state === "playing" && skipStory()) return void e.preventDefault?.();
   if (state !== "map") return;
   e.preventDefault?.();
   mapPointer(...canvasPoint(e));
@@ -2576,15 +2794,18 @@ function rotateStep(st, rotate, held) {
 }
 // Cruceta: desplazamiento (dx, dy) desde el centro y radio r → teclas. Zona muerta central;
 // arriba = saltar. Abajo no tiene acción (el juego no agacha).
+// Zona muerta mínima y zonas laterales anchas: el pulgar se desliza de izquierda a derecha sin
+// levantarse y sin huecos. Arriba solo salta si el gesto es claramente hacia arriba (caminar con
+// el pulgar algo alto no hace saltar); el botón SALTAR es la vía principal.
 function padKeys(dx, dy, r) {
   const out = [];
   if (!(r > 0) || !Number.isFinite(dx) || !Number.isFinite(dy)) return out;
   const nx = dx / r,
     ny = dy / r;
-  if (Math.hypot(nx, ny) < 0.25) return out;
-  if (nx <= -0.35) out.push("ArrowLeft");
-  else if (nx >= 0.35) out.push("ArrowRight");
-  if (ny <= -0.5) out.push("ArrowUp");
+  if (Math.hypot(nx, ny) < 0.16) return out;
+  if (nx <= -0.18) out.push("ArrowLeft");
+  else if (nx >= 0.18) out.push("ArrowRight");
+  if (ny <= -0.55 && -ny >= Math.abs(nx) * 0.75) out.push("ArrowUp");
   return out;
 }
 // Botón de disparo táctil: dispara el arma elegida; sin munición de esa arma, la huaraca
@@ -2644,12 +2865,14 @@ function uiView() {
   return {
     layout,
     rotate: needsRotate(layout, vp.w, vp.h, state),
-    // Recargar contextual (táctil): junto a una apacheta o a la llama con carga.
+    // Recargar contextual (táctil): solo cuando sirve (junto a una apacheta con la manta o las
+    // boleadoras sin llenar, o junto a la llama cuando su recarga cabe). La llama va siempre al
+    // lado: mostrarlo siempre era ruido.
     reload: !!(
       state === "playing" &&
       player &&
       world &&
-      (nearPile() >= 0 || (nearLlama() && world.loads > 0))
+      ((nearPile() >= 0 && (player.ammo < MAX_AMMO || player.bola < MAX_BOLA)) || llamaPromptVisible())
     ),
     stages: info,
     stagePlace: cur.place,
@@ -2747,7 +2970,12 @@ function loop(t) {
     drawMap();
   } else {
     fitCanvas(); // fuera del mapa, siempre 960×540
-    if (state === "playing") update(dt);
+    // Hit-stop: unos fotogramas congelados al golpear (el dibujo sigue).
+    if (state === "playing") {
+      if (hitStop > 0) hitStop -= dt;
+      else update(dt);
+      if (shakeT > 0) shakeT -= dt;
+    }
     else if (state === "won" || state === "lost") {
       updateFx(dt);
       if (llamaS) llamaS.animT += dt; // la llama sigue celebrando tras la victoria

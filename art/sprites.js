@@ -549,13 +549,19 @@
     }, '9');
     return g.finishHi();
   }
+  // Trayectoria del pie (8 puntos clave) muestreada en 12 fotogramas: zancada más fluida.
   var RUNC = [[5, 38], [2, 38], [-1, 38], [-4, 37], [-6, 35], [-4, 33], [0, 33], [4, 35]];
-  var RUNBY = [0, 1, 0, -1, 0, 1, 0, -1];
+  var RUN_N = 12, RUNBY = [0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, -1];
+  function runFoot(t) {
+    var a = Math.floor(t) % 8, b = (a + 1) % 8, f = t - Math.floor(t);
+    return [Math.round(RUNC[a][0] + (RUNC[b][0] - RUNC[a][0]) * f), Math.round(RUNC[a][1] + (RUNC[b][1] - RUNC[a][1]) * f)];
+  }
   function heroRun(i) {
-    var by = RUNBY[i], ph = i / 8 * Math.PI * 2, s = -Math.cos(ph), shY = 19 + by;
+    var by = RUNBY[i], ph = i / RUN_N * Math.PI * 2, s = -Math.cos(ph), shY = 19 + by;
+    var t = i * 8 / RUN_N, F = runFoot(t), B = runFoot((t + 4) % 8);
     return {
       by: by, lean: 1,
-      ff: [20 + RUNC[i][0], RUNC[i][1]], fb: [18 + RUNC[(i + 4) % 8][0], RUNC[(i + 4) % 8][1]],
+      ff: [20 + F[0], F[1]], fb: [18 + B[0], B[1]],
       hf: [24 + s * 5, shY + 7 - (s > 0 ? s * 3 : 0)], hb: [17 - s * 5, shY + 7 - (s < 0 ? -s * 3 : 0)],
       fs: i % 2, sling: slingHang(-2 - Math.round(s), 3)
     };
@@ -566,22 +572,30 @@
       return { by: by, lean: 1, fb: [17, 38], ff: [24, 38], hb: [16, 26 + by], hf: [25, 26 + by], fs: [0, 1, 1, 0][i], sling: slingHang(0, 4) };
     },
     run: heroRun,
+    // Salto: impulso (brazos suben) → estirado → recogido en el vértice.
     jump: function (i) {
-      return { by: -1, fb: [15, 35], ff: [24, 34 - i], hb: [11, 21 - i], hf: [27, 14 - i], fs: -1, sling: slingHang(-1, 4) };
+      if (i === 0) return { by: 0, lean: 1, fb: [16, 37], ff: [23, 36], hb: [13, 24], hf: [26, 19], fs: -1, sling: slingHang(-1, 4) };
+      var k = i - 1;
+      return { by: -1, fb: [15, 35], ff: [24, 34 - k], hb: [11, 21 - k], hf: [27, 14 - k], fs: -1, sling: slingHang(-1, 4) };
     },
+    // Caída: brazos arriba → abiertos → piernas buscando el suelo.
     fall: function (i) {
+      if (i === 2) return { by: 0, fb: [16, 38], ff: [24, 38], hb: [12, 18], hf: [28, 17], fs: 1, sling: slingHang(-2, 4) };
       return { by: 0, fb: [16, 38], ff: [23, 37], hb: [11, 15 + i], hf: [28, 14 + i], fs: 1, sling: slingHang(-2, 3 + i) };
     },
     crouch: function (i) {
       return { by: 5, lean: 1, fb: [14, 38], ff: [24, 38], hb: [15, 33], hf: [27, 32 + i], fs: i, sling: slingHang(1, 3) };
     },
+    // Lanzamiento en 8 fotogramas: carga, subida del brazo, dos vueltas, suelta y remate.
     throw: function (i) {
       switch (i) {
         case 0: return { bx: -1, lean: -1, by: 1, fb: [15, 38], ff: [24, 38], hb: [20, 28], hf: [13, 25], sling: slingHang(-3, 3) };
-        case 1: return { lean: 0, fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 11], sling: slingSpin(17, 6) };
-        case 2: return { fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 10], sling: slingSpin(33, 6, arc(26, 7, 7, 2.5, 190, 345, 10)) };
-        case 3: return { fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 10], sling: slingSpin(18, 8, arc(26, 7, 7, 2.5, 15, 165, 10)) };
-        case 4: return {
+        case 1: return { bx: -1, lean: -1, by: 1, fb: [15, 38], ff: [24, 38], hb: [18, 27], hf: [17, 17], sling: slingHang(-3, 2) };
+        case 2: return { lean: 0, fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 11], sling: slingSpin(17, 6) };
+        case 3: return { fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 10], sling: slingSpin(33, 6, arc(26, 7, 7, 2.5, 190, 345, 10)) };
+        case 4: return { fb: [15, 38], ff: [24, 38], hb: [14, 26], hf: [26, 10], sling: slingSpin(18, 8, arc(26, 7, 7, 2.5, 15, 165, 10)) };
+        case 6: return { bx: 1, lean: 2, fb: [14, 38], ff: [26, 38], hb: [13, 26], hf: [30, 22], sling: slingHang(4, 2) };
+        case 5: return {
           bx: 1, lean: 2, fb: [14, 38], ff: [26, 38], hb: [13, 25], hf: [30, 18],
           sling: function (g, hx, hy) {
             g.hline(hx * 2 + 2, hy * 2, hx * 2 + 14, hy * 2 - 3, 'w'); g.hrect(hx * 2 + 13, hy * 2 - 4, 3, 2, 'b');
@@ -613,11 +627,11 @@
     variant: function (o) { var f = o && o.fill != null ? o.fill : 0.67; return Math.max(0, Math.min(3, Math.round(f * 3))); },
     anims: {
       idle: A(4, 4, true, heroBuild('idle')),
-      run: A(8, 14, true, heroBuild('run')),
-      jump: A(2, 6, true, heroBuild('jump')),
-      fall: A(2, 6, true, heroBuild('fall')),
+      run: A(12, 20, true, heroBuild('run')),
+      jump: A(3, 12, false, heroBuild('jump')),
+      fall: A(3, 8, false, heroBuild('fall')),
       crouch: A(2, 3, true, heroBuild('crouch')),
-      throw: A(6, 16, false, heroBuild('throw')),
+      throw: A(8, 21, false, heroBuild('throw')),
       hurt: A(2, 8, true, heroBuild('hurt')),
       dead: A(1, 1, false, heroBuild('dead'))
     }

@@ -40,6 +40,24 @@
 }
 html {
   background: var(--ground);
+  /* Sin zoom por doble toque en ninguna parte (el pellizco lo bloquean el viewport y ui.js). */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/* El juego no se selecciona, no abre la lupa/menú de iOS y no hace gestos del navegador. */
+#game-section {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.stage > canvas,
+.stage[data-state="playing"],
+.hud,
+.controls,
+.pad {
+  touch-action: none;
 }
 body {
   margin: 0;
@@ -1088,14 +1106,32 @@ body:not(.has-ui) [data-action] {
   }
 }
 
-/* Táctil (puntero grueso): mandos semitransparentes sobre el juego -------------------- */
+/* Táctil (puntero grueso): mandos translúcidos que no tapan al héroe ------------------
+   Pulgar izquierdo: cruceta abajo a la izquierda. Pulgar derecho: LANZAR (grande, en la
+   esquina) y SALTAR justo a su lado, como en un arcade. Encima de LANZAR, una fila corta de
+   fichas: arma (tocar = siguiente arma), escupitajo de la llama y Recargar (solo cuando sirve).
+   En reposo son translúcidos (~45 %); al pulsar, opacos. Respetan las zonas seguras (notch). */
+body[data-layout="touch"] {
+  --t-pad: min(30vh, 128px);
+  --t-fire: min(25vh, 100px);
+  --t-jump: min(21vh, 86px);
+  --t-chip: min(11vh, 44px);
+  --t-gap: 10px;
+  /* Abajo, junto al notch, sobra hueco: los mandos se acercan al borde (notch a media altura). */
+  --t-left: max(12px, calc(env(safe-area-inset-left) - 24px));
+  --t-right: max(12px, calc(env(safe-area-inset-right) - 24px));
+  --t-bottom: max(10px, env(safe-area-inset-bottom));
+}
 body[data-layout="touch"] .controls {
   grid-area: 1 / 1;
   align-self: end;
-  justify-self: center;
-  z-index: 1;
-  padding: 0 0 clamp(6px, 1.8cqw, 16px);
-  gap: clamp(4px, 1cqw, 12px);
+  justify-self: end;
+  z-index: 2;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 0 6px calc(var(--t-bottom) + var(--t-fire) + 22px) 0;
+  padding: 0;
   background: none;
   box-shadow: none;
   pointer-events: none;
@@ -1103,7 +1139,10 @@ body[data-layout="touch"] .controls {
 body[data-layout="touch"] .stage:not([data-state="playing"]) .controls,
 body[data-layout="touch"] .cbtn-move,
 body[data-layout="touch"] .cbtn-pause,
-body[data-layout="touch"] .cbtn-reload {
+body[data-layout="touch"] .cbtn-reload,
+body[data-layout="touch"] .controls [data-key="Space"],
+body[data-layout="touch"] .cbtn-weapon:not(.is-selected),
+body[data-layout="touch"] .controls .clabel {
   display: none;
 }
 body[data-layout="touch"][data-reload="true"] .cbtn-reload {
@@ -1111,21 +1150,43 @@ body[data-layout="touch"][data-reload="true"] .cbtn-reload {
 }
 body[data-layout="touch"] .cbtn {
   flex: none;
-  width: clamp(56px, 11.5cqw, 108px);
-  min-height: 44px;
-  height: clamp(44px, 8cqw, 76px);
-  padding: 2px 4px;
-  gap: 1px;
-  background: rgba(22, 17, 26, 0.66);
-  font-size: clamp(11px, 2cqw, 18px);
+  width: var(--t-chip);
+  height: var(--t-chip);
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: 12px;
+  border: 2px solid rgba(233, 181, 59, 0.45);
+  background: rgba(14, 10, 16, 0.5);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  opacity: 0.62;
   pointer-events: auto;
+  transition: opacity 0.12s, transform 0.08s;
+}
+body[data-layout="touch"] .cbtn:active,
+body[data-layout="touch"] .cbtn.is-pressed {
+  opacity: 1;
+  transform: scale(0.94);
+  background: rgba(168, 48, 31, 0.85);
+}
+/* Arma elegida: sin el marco dorado de escritorio (aquí siempre hay una sola visible). */
+body[data-layout="touch"] .cbtn.is-selected {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+body[data-layout="touch"] .cbtn-reload {
+  order: -1; /* aparece a la izquierda: arma y llama no se mueven */
+  opacity: 0.9;
+  border-color: var(--gold);
 }
 body[data-layout="touch"] .cico svg {
-  height: clamp(16px, 3cqw, 32px);
+  height: calc(var(--t-chip) * 0.5);
+  max-width: calc(var(--t-chip) * 0.66);
 }
 body[data-layout="touch"] .cbadge {
-  top: 2px;
-  right: 2px;
+  top: -6px;
+  right: -6px;
+  font-size: 11px;
+  border-radius: 6px;
 }
 .pad {
   display: none;
@@ -1138,9 +1199,8 @@ body[data-layout="touch"][data-state="playing"] .pad {
   display: block;
 }
 .dpad,
-.fire-btn {
+.pad-btn {
   position: absolute;
-  bottom: max(10px, env(safe-area-inset-bottom));
   aspect-ratio: 1;
   border-radius: 50%;
   pointer-events: auto;
@@ -1148,43 +1208,58 @@ body[data-layout="touch"][data-state="playing"] .pad {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  opacity: 0.55;
+  transition: opacity 0.12s;
 }
 .dpad {
-  left: max(10px, env(safe-area-inset-left));
-  width: min(34vh, 148px);
-  background: radial-gradient(circle, rgba(46, 38, 52, 0.4) 0 28%, rgba(20, 15, 24, 0.55) 29% 100%);
-  border: 3px solid rgba(98, 84, 106, 0.85);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+  left: var(--t-left);
+  bottom: var(--t-bottom);
+  width: var(--t-pad);
+  background:
+    radial-gradient(circle, rgba(233, 181, 59, 0.16) 0 17%, transparent 18%),
+    radial-gradient(circle, rgba(20, 15, 24, 0.28) 0 58%, rgba(20, 15, 24, 0.5) 59% 100%);
+  border: 2px solid rgba(233, 181, 59, 0.55);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 5px rgba(168, 48, 31, 0.28);
+}
+/* Zona de toque más generosa que el círculo visible (el pulgar no «se sale» de la cruceta). */
+.dpad::before {
+  content: "";
+  position: absolute;
+  inset: -22% -26% -14% -18%;
+  border-radius: 28%;
+}
+.dpad[data-dir]:not([data-dir=""]) {
+  opacity: 0.95;
 }
 .dp {
   position: absolute;
   display: grid;
   place-items: center;
-  width: 30%;
-  height: 30%;
+  width: 32%;
+  height: 32%;
   color: var(--cream);
-  opacity: 0.85;
+  opacity: 0.9;
+  pointer-events: none;
 }
 .dp svg {
-  width: 62%;
+  width: 56%;
   height: auto;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.7));
 }
 .dp-up {
-  top: 4%;
-  left: 35%;
-}
-.dp-down {
-  bottom: 4%;
-  left: 35%;
-  opacity: 0.3; /* sin acción: el juego no agacha */
+  top: 3%;
+  left: 34%;
+  opacity: 0.55; /* también salta, pero el botón SALTAR es la vía principal */
 }
 .dp-left {
-  left: 4%;
-  top: 35%;
+  left: 3%;
+  top: 34%;
 }
 .dp-right {
-  right: 4%;
-  top: 35%;
+  right: 3%;
+  top: 34%;
 }
 .dpad[data-dir~="ArrowLeft"] .dp-left,
 .dpad[data-dir~="ArrowRight"] .dp-right,
@@ -1192,24 +1267,59 @@ body[data-layout="touch"][data-state="playing"] .pad {
   color: var(--gold);
   opacity: 1;
 }
-.fire-btn {
-  right: max(10px, env(safe-area-inset-right));
-  width: min(31vh, 128px);
+.pad-btn {
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 2px;
   padding: 0;
-  background: radial-gradient(circle, rgba(70, 48, 28, 0.7), rgba(24, 16, 14, 0.8));
-  border: 4px solid var(--gold);
-  box-shadow:
-    0 0 0 2px rgba(0, 0, 0, 0.6),
-    inset 0 0 0 2px rgba(138, 106, 30, 0.9);
+  color: var(--cream);
+  font: 700 clamp(9px, 2.6vh, 12px) / 1 var(--font-body);
+  letter-spacing: 0.08em;
 }
-.fire-btn svg {
-  width: 56%;
+.pad-btn svg {
   height: auto;
 }
+.pad-label {
+  text-shadow: 0 1px 0 #000;
+}
+.pad-btn.is-pressed,
+.pad-btn:active {
+  opacity: 1;
+}
+.fire-btn {
+  right: var(--t-right);
+  bottom: calc(var(--t-bottom) + 12px);
+  width: var(--t-fire);
+  background: radial-gradient(circle, rgba(70, 48, 28, 0.55), rgba(24, 16, 14, 0.7));
+  border: 3px solid var(--gold);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 3px rgba(168, 48, 31, 0.55);
+}
+.fire-btn svg {
+  width: 46%;
+}
+.fire-btn.is-pressed,
 .fire-btn:active {
-  background: radial-gradient(circle, rgba(168, 48, 31, 0.85), rgba(60, 20, 14, 0.9));
+  background: radial-gradient(circle, rgba(168, 48, 31, 0.9), rgba(60, 20, 14, 0.95));
+}
+.jump-btn {
+  right: calc(var(--t-right) + var(--t-fire) + var(--t-gap));
+  bottom: var(--t-bottom);
+  width: var(--t-jump);
+  background: radial-gradient(circle, rgba(40, 52, 66, 0.5), rgba(14, 12, 20, 0.7));
+  border: 3px solid rgba(242, 230, 204, 0.75);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 3px rgba(91, 123, 176, 0.55);
+}
+.jump-btn svg {
+  width: 40%;
+}
+.jump-btn.is-pressed,
+.jump-btn:active {
+  background: radial-gradient(circle, rgba(91, 123, 176, 0.9), rgba(20, 24, 40, 0.95));
 }
 
 /* Franja inferior: logo, ruta con hitos y lema ------------------------------------- */

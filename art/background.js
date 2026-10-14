@@ -21,7 +21,8 @@
   'use strict';
 
   var LOW_H = 270;
-  var PARALLAX = { far: 0.08, midfar: 0.2, mid: 0.45, fg: 1.3, cloud: 0.03, condor: 0.05 };
+  // Profundidad: capas lejanas casi quietas y capa media más rápida (paralaje más marcado).
+  var PARALLAX = { far: 0.05, midfar: 0.24, mid: 0.56, fg: 1.45, cloud: 0.03, condor: 0.06 };
 
   // ---------------------------------------------------------------- utilidades
   function hex(h) {

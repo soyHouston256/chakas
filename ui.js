@@ -435,6 +435,30 @@
     }
   }
 
+  /* --- Sin zoom nunca ---------------------------------------------------- */
+  // iOS ignora user-scalable=no: se cancelan el pellizco (gesture*), el doble toque y el
+  // movimiento con varios dedos. Los mandos usan pointerdown, así que siguen respondiendo.
+  function preventZoom() {
+    const stop = (e) => e.cancelable && e.preventDefault();
+    const opts = { passive: false };
+    ["gesturestart", "gesturechange", "gestureend"].forEach((t) => doc.addEventListener(t, stop, opts));
+    doc.addEventListener("dblclick", stop, opts);
+    doc.addEventListener("touchmove", (e) => e.touches && e.touches.length > 1 && stop(e), opts);
+    // Doble toque rápido sobre el juego (fuera de botones y campos): sin zoom ni clic fantasma.
+    let lastEnd = 0;
+    doc.addEventListener(
+      "touchend",
+      (e) => {
+        const now = Date.now(),
+          t = e.target;
+        const free = !(t && t.closest && t.closest("button, a, input, select, textarea, label"));
+        if (now - lastEnd < 350 && free && el.game && el.game.contains(t)) stop(e);
+        lastEnd = now;
+      },
+      opts,
+    );
+  }
+
   const UI = {
     ready: true,
     toggleFullscreen,
@@ -482,6 +506,7 @@
       }
       // Sin menú contextual ni selección al mantener pulsado un mando táctil.
       doc.querySelectorAll(".controls, .pad").forEach((n) => n.addEventListener("contextmenu", (e) => e.preventDefault()));
+      preventZoom();
       refreshFs();
       UI.sync();
     },

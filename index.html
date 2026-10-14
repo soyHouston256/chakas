@@ -2,7 +2,7 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#16121A" />
     <title>CHANKAS · Camino de resistencia</title>
     <meta name="description" content="Acción lateral pixel art en los Andes desde 1536. Con tu huaraca y tu llama, recorre el camino de la resistencia de Sacsayhuamán a Vilcabamba." />
@@ -258,15 +258,15 @@
             </div>
           </div>
 
-          <!-- Mandos táctiles: cruceta (multitáctil, deslizar el pulgar) y disparo -->
+          <!-- Mandos táctiles: cruceta (multitáctil, deslizar el pulgar), saltar y disparar -->
           <div class="pad" id="pad">
-            <div class="dpad" data-pad role="group" aria-label="Cruceta: caminar y saltar">
+            <div class="dpad" data-pad role="group" aria-label="Cruceta: caminar (arriba también salta)">
               <span class="dp dp-up" aria-hidden="true"><svg viewBox="0 0 7 4" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h1v1H3zM2 1h3v1H2zM1 2h5v1H1zM0 3h7v1H0z"/></svg></span>
               <span class="dp dp-left" aria-hidden="true"><svg viewBox="0 0 4 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M3 0h1v1H3zM2 1h2v1H2zM1 2h3v1H1zM0 3h4v1H0zM1 4h3v1H1zM2 5h2v1H2zM3 6h1v1H3z"/></svg></span>
               <span class="dp dp-right" aria-hidden="true"><svg viewBox="0 0 4 7" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h1v1H0zM0 1h2v1H0zM0 2h3v1H0zM0 3h4v1H0zM0 4h3v1H0zM0 5h2v1H0zM0 6h1v1H0z"/></svg></span>
-              <span class="dp dp-down" aria-hidden="true"><svg viewBox="0 0 7 4" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0 0h7v1H0zM1 1h5v1H1zM2 2h3v1H2zM3 3h1v1H3z"/></svg></span>
             </div>
-            <button type="button" tabindex="-1" class="fire-btn" data-fire aria-label="Disparar el arma elegida"><svg viewBox="0 0 12 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f2e6cc" d="M9 0h1v1H9zM11 0h1v1H11zM8 1h1v1H8zM10 1h1v1H10zM7 2h1v1H7zM9 2h1v1H9z"/><path fill="#2a2228" d="M2 2h4v1H2zM1 3h1v1H1zM6 3h1v1H6zM0 4h1v1H0zM7 4h1v1H7zM0 5h1v1H0zM7 5h1v1H7zM0 6h1v1H0zM7 6h1v1H7zM1 7h1v1H1zM7 7h1v1H7zM2 8h5v1H2z"/><path fill="#e4ddd0" d="M2 3h2v1H2zM1 4h2v1H1zM1 5h1v1H1z"/><path fill="#a39b90" d="M4 3h2v1H4zM3 4h4v1H3zM2 5h5v1H2zM1 6h5v1H1zM2 7h3v1H2z"/><path fill="#6f6558" d="M6 6h1v1H6zM5 7h2v1H5z"/></svg></button>
+            <button type="button" tabindex="-1" class="pad-btn jump-btn" data-key="Space" aria-label="Saltar"><svg viewBox="0 0 9 8" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M5 0h2v1H5zM5 1h2v1H5zM3 2h4v1H3zM2 3h1v1H2zM4 3h2v1H4zM7 3h1v1H7zM4 4h2v1H4zM4 5h1v1H4zM6 5h1v1H6zM3 6h1v1H3zM7 6h1v1H7zM2 7h1v1H2z"/></svg><span class="pad-label">SALTAR</span></button>
+            <button type="button" tabindex="-1" class="pad-btn fire-btn" data-fire aria-label="Disparar el arma elegida"><svg viewBox="0 0 12 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f2e6cc" d="M9 0h1v1H9zM11 0h1v1H11zM8 1h1v1H8zM10 1h1v1H10zM7 2h1v1H7zM9 2h1v1H9z"/><path fill="#2a2228" d="M2 2h4v1H2zM1 3h1v1H1zM6 3h1v1H6zM0 4h1v1H0zM7 4h1v1H7zM0 5h1v1H0zM7 5h1v1H7zM0 6h1v1H0zM7 6h1v1H7zM1 7h1v1H1zM7 7h1v1H7zM2 8h5v1H2z"/><path fill="#e4ddd0" d="M2 3h2v1H2zM1 4h2v1H1zM1 5h1v1H1z"/><path fill="#a39b90" d="M4 3h2v1H4zM3 4h4v1H3zM2 5h5v1H2zM1 6h5v1H1zM2 7h3v1H2z"/><path fill="#6f6558" d="M6 6h1v1H6zM5 7h2v1H5z"/></svg><span class="pad-label">LANZAR</span></button>
           </div>
         </div>
 

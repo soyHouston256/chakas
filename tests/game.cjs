@@ -151,7 +151,7 @@ run("cam=1600");
 assert.equal(run("canFire(A)"), true);
 // El jefe que sale de cámara durante la preparación cancela el disparo.
 run(`reset(); enemies.filter(e=>e.type!==3).forEach(e=>e.dead=true); var Z=enemies.find(e=>e.type===3); player.x=2000; player.inv=999;
-  Z.x=1750; Z.home=1750; cam=1720; Z.cool=0; shots.length=0; update(.016)`);
+  Z.x=1700; Z.home=1700; cam=1680; Z.cool=0; shots.length=0; update(.016)`);
 assert.ok(run("Z.wind") > 0);
 run("for (let i=0;i<60;i++){ player.x += 4; update(.016); }");
 assert.equal(run("shots.filter(s=>!s.good).length"), 0);
@@ -185,7 +185,7 @@ run("document.querySelector('#start').onclick({})");
 assert.equal(run("player.x"), 1600);
 assert.equal(run("enemies[0].dead"), true);
 run("document.querySelector('#restart').onclick({})");
-assert.equal(run("enemies.every(e=>!e.dead) && world.cpPile===-1 && player.x===70"), true);
+assert.equal(run("enemies.every(e=>!e.dead) && world.cpPile===-1 && player.x===START_X"), true);
 // Respawn con el jefe activo: conserva el daño del jefe y lo devuelve a su puesto.
 run(
   "player.x=3200; update(.016); var Bo=enemies.find(e=>e.type===3); Bo.hp=10; Bo.x=3300; Bo.wind=.3; player.hp=1; player.inv=0; hit(); update(.016); respawn()",
@@ -701,7 +701,7 @@ run.fire("keyup", { code: "KeyP" });
 run.fire("keydown", { code: "KeyP" });
 assert.equal(run("state"), "playing");
 run("pause(); player.x=900; uiAction('restart')");
-assert.deepEqual(J("[state, player.x]"), ["playing", 70]);
+assert.deepEqual(J("[state, player.x === START_X]"), ["playing", true]);
 run("pause(); uiAction('title')");
 assert.deepEqual(J("[state, player, uiView().hud.ammo]"), ["menu", null, 24]);
 run("draw()"); // el título dibuja el escenario sin jugador
@@ -1238,8 +1238,14 @@ assert.equal(run("fireKey(player)"), "KeyJ");
 assert.equal(run("fireKey(null)"), "KeyJ");
 assert.equal(run("uiAction('weapon', 7)"), false);
 // Recargar contextual: junto a la apacheta inicial sí; lejos de apachetas y de la llama, no.
-run("player.x = piles[0]; update(1/60)");
+run("player.x = piles[0]; player.ammo = MAX_AMMO; player.bola = MAX_BOLA; update(1/60)");
+assert.equal(J("uiView().reload"), false, "con la manta llena no hace falta recargar");
+run("player.ammo = 10; update(1/60)");
 assert.equal(J("uiView().reload"), true);
+run("player.x = 2000; world.llama = 1920; update(1/60)");
+assert.equal(J("uiView().reload"), true, "junto a la llama, con hueco en la manta");
+run("player.ammo = MAX_AMMO; update(1/60)");
+assert.equal(J("uiView().reload"), false);
 run("player.x = 1250; world.llama = 300; update(1/60)");
 assert.equal(J("uiView().reload"), false);
 // «suspend» pausa sin alternar (salir de pantalla completa, pestaña oculta).
@@ -1435,3 +1441,127 @@ console.log("OK: complejidad temática, extensión de etapa, recompensa opcional
 
 run = makeGame({ChankasCompetition:{getProgress:()=>({completedStages:[1]})}});
 assert.equal(run("mapS.progress"), 1, "se restaura un perfil llegado antes de cargar el motor");
+
+// ---------------------------------------------------------------------------
+// Nivel 1 «finísimo»: movimiento cómodo, cámara, narración, sensación de golpe y móvil sin zoom.
+run = makeGame();
+const solo = "keys.clear(); reset(); enemies.forEach(e=>e.dead=true); player.inv=999; world.story=null;";
+// Aceleración corta (ni instantánea ni lenta) y frenado sin patinar.
+run(solo + "keys.add('ArrowRight'); update(1/60)");
+assert.ok(run("player.vx") > 0 && run("player.vx") < MOVE_SPEED(run), "arranque progresivo");
+run("for (let i=0;i<12;i++) update(1/60)");
+assert.equal(run("player.vx"), 230, "velocidad máxima en ~0,2 s");
+run("keys.clear(); for (let i=0;i<9;i++) update(1/60)");
+assert.equal(run("player.vx"), 0, "frena en menos de 0,15 s");
+function MOVE_SPEED(r) { return r("MOVE.speed"); }
+// Salto: altura máxima intacta; soltar pronto = salto más corto.
+const apex = (hold) => {
+  run(solo + "var top=player.y; keys.add('Space');");
+  for (let i = 0; i < 90; i++) {
+    if (i === hold) run("keys.delete('Space')");
+    run("update(1/60); top=Math.min(top, player.y)");
+  }
+  return run("GROUND - player.h - top");
+};
+const high = apex(90), low = apex(3);
+assert.ok(high > 95 && high < 112, "salto completo: " + high);
+assert.ok(low < high * 0.6, "salto corto al soltar: " + low);
+// Mantener el salto no encadena saltos (hace falta volver a pulsar).
+run(solo + "keys.add('Space'); for (let i=0;i<70;i++) update(1/60)");
+assert.equal(run("player.ground && player.vy === 0"), true);
+run("update(1/60)");
+assert.equal(run("player.ground"), true, "sin bote automático manteniendo pulsado");
+// Salto almacenado: pulsar justo antes de aterrizar salta al tocar el suelo.
+run(solo + "keys.add('Space'); update(1/60); keys.clear(); for (let i=0;i<200 && !(player.vy>0 && GROUND-player.h-player.y < 6);i++) update(1/60); keys.add('Space'); for (let i=0;i<8 && player.vy>=0;i++) update(1/60)");
+assert.ok(run("player.vy") < 0, "buffer de salto");
+// Tiempo de coyote: recién salido de una terraza aún se puede saltar; mucho después, no.
+run(solo + "var P=platforms[0]; player.x=P.x+P.w-2; player.y=P.y-player.h; player.ground=true; player.face=1; keys.add('ArrowRight'); for (let i=0;i<60 && player.ground;i++) update(1/60); update(1/60); keys.add('Space'); update(1/60)");
+assert.ok(run("player.vy") < -400, "coyote");
+run(solo + "var P=platforms[0]; player.x=P.x+P.w-2; player.y=P.y-player.h; player.ground=true; keys.add('ArrowRight'); for (let i=0;i<60 && player.ground;i++) update(1/60); for (let i=0;i<12;i++) update(1/60); keys.add('Space'); update(1/60)");
+assert.ok(run("player.vy") > 0, "sin coyote pasado el margen");
+// Cámara: el héroe arranca en el centro-izquierda y, caminando, sigue en ~35 % (mirada adelante).
+run("reset()");
+assert.equal(run("player.x"), run("START_X"));
+const camPct = () => run("Math.round((player.x - cam) / W * 100)");
+assert.ok(camPct() >= 33 && camPct() <= 40, "inicio en el centro-izquierda: " + camPct());
+run("enemies.forEach(e=>e.dead=true); player.inv=999; keys.add('ArrowRight'); for (let i=0;i<300;i++) update(1/60); keys.clear()");
+assert.ok(camPct() >= 33 && camPct() <= 40, "caminando: " + camPct());
+run("keys.add('ArrowLeft'); for (let i=0;i<20;i++) update(1/60); keys.clear(); for (let i=0;i<180;i++) update(1/60)");
+assert.ok(camPct() > 40 && camPct() <= 55, "mirando atrás, el encuadre se desliza: " + camPct());
+run("respawn()");
+assert.ok(camPct() >= 33 && camPct() <= 40, "al reaparecer: " + camPct());
+// Narración: rótulo al empezar, se omite con Enter, no reaparece al reaparecer; otro ante el capitán.
+run("reset()");
+assert.equal(run("world.story.lines === STORY.intro && state"), "playing");
+run("for (let i=0;i<60;i++) update(1/60)");
+assert.equal(run("world.story.i"), 0);
+run("keys.add('Enter'); update(1/60); keys.clear()");
+assert.equal(run("world.story"), null);
+run("reset(); for (let i=0;i<9*60 && world.story;i++) update(1/60)");
+assert.equal(run("world.story"), null, "se va sola en pocos segundos");
+assert.ok(STORYLEN(run) <= 2 && run("STORY.intro.every(l => l.text.length <= 90)"), "breve");
+function STORYLEN(r) { return r("STORY.intro.length"); }
+run("player.x = piles[ARENA_PILE]; player.inv = 999; update(1/60)");
+assert.equal(run("world.story && world.story.lines === STORY.boss"), true);
+run("world.story = null; player.x += 20; update(1/60)");
+assert.equal(run("world.story"), null, "una sola vez");
+assert.equal(run("skipStory()"), false);
+// Sensación de golpe: congelado breve y sacudida en impactos y derrotas (sin sacudida con
+// «reducir movimiento»); update() no cambia, el congelado lo aplica el bucle.
+run("reset(); world.story=null; var E1=enemies[1]; E1.hp=3; damageEnemy(E1, 1, 300, E1.x, E1.y)");
+assert.ok(run("hitStop") > 0 && run("hitStop") <= 0.1 && run("shakeT") > 0);
+run("hitStop=0; E1.hp=1; var n0=particles.length; damageEnemy(E1, 1, 300, E1.x, E1.y)");
+assert.ok(run("hitStop") >= 0.06 && run("particles.length - n0") >= 10, "derrota: polvo y estrellitas");
+run("hitStop=0.05; var T1=world.time; last=0; loop(16)");
+assert.equal(run("world.time"), run("T1"), "hit-stop: el mundo se congela");
+run("for (let i=0;i<10;i++) loop(16 + (i+1)*16)");
+assert.ok(run("world.time") > run("T1"));
+const rm = makeGame({ matchMedia: (q) => ({ matches: q.includes("reduce") }) });
+rm("reset(); var E2=enemies[1]; damageEnemy(E2, 1, 300, E2.x, E2.y)");
+assert.equal(rm("shakeT"), 0, "sin sacudida con reducir movimiento");
+run("reset(); for (let i=0;i<400;i++) addParticle({x:0,y:0,vx:0,vy:0,t:1})");
+assert.equal(run("particles.length"), run("MAX_PARTICLES"), "partículas con tope");
+// Piedra de fuego: estela de brasas en vuelo y llamarada al impactar.
+run("reset(); world.story=null; particles.length=0; player.cool=0; shoot(true); for (let i=0;i<6;i++) update(1/60)");
+assert.ok(run("particles.some(p=>p.color==='#ffc93c' || p.color==='#ff7b1c')"));
+// Cruceta: sin huecos al deslizar de izquierda a derecha; caminar con el pulgar alto no salta.
+for (let dx = -60; dx <= 60; dx += 4) {
+  const ks = J(`padKeys(${dx}, -8, 60)`);
+  if (Math.abs(dx) >= 11) assert.ok(ks.includes(dx < 0 ? "ArrowLeft" : "ArrowRight"), "sin zona muerta en " + dx);
+  assert.ok(!ks.includes("ArrowUp"));
+}
+assert.deepEqual(J("padKeys(55, -30, 60)"), ["ArrowRight"], "caminar con el pulgar algo alto no salta");
+// Arma táctil: un solo botón que rota y salta las armas vacías.
+run("reset(); player.weapon='J'");
+assert.equal(run("nextWeapon(player)"), "K");
+run("player.fire=0");
+assert.equal(run("nextWeapon(player)"), "L");
+run("player.bola=0");
+assert.equal(run("nextWeapon(player)"), "J");
+assert.equal(run("nextWeapon(null)"), "J");
+// Página: sin zoom (viewport), botón SALTAR propio junto a LANZAR y sin cruceta «abajo» (no se agacha).
+{
+  const html = fs.readFileSync("index.html", "utf8"),
+    css = fs.readFileSync("style.css", "utf8"),
+    ui = fs.readFileSync("ui.js", "utf8");
+  assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/);
+  assert.match(html, /class="pad-btn jump-btn" data-key="Space"/);
+  assert.doesNotMatch(html, /dp-down/);
+  assert.match(css, /touch-action: manipulation/);
+  assert.match(css, /\.pad \{\s*touch-action: none|\.pad\s*\{[^}]*touch-action: none/);
+  for (const ev of ["gesturestart", "gesturechange", "gestureend", "dblclick", "touchmove"]) assert.ok(ui.includes('"' + ev + '"'), ev);
+  assert.match(ui, /passive: false/);
+}
+// Sprites del héroe: más fotogramas en carrera, salto y lanzamiento; todos se construyen.
+(() => {
+  const ctx = { console, Math };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync("art/sprites.js", "utf8"), ctx);
+  const H = ctx.ChankasSprites.list().hero.anims;
+  assert.ok(H.run.frames >= 12 && H.jump.frames >= 3 && H.fall.frames >= 3 && H.throw.frames >= 8);
+  const d = ctx.ChankasSprites.duration("hero", "throw");
+  assert.ok(d > 0.33 && d < 0.42, "el lanzamiento dura lo mismo: " + d);
+  for (const a of ["run", "jump", "fall", "throw"]) for (let i = 0; i < H[a].frames; i++) ctx.ChankasSprites._grid("hero", a, i);
+})();
+console.log("OK: nivel 1 finísimo (aceleración, salto variable, coyote, buffer, cámara, narración, hit-stop, sacudida, partículas, cruceta sin huecos, arma táctil, sin zoom, fotogramas del héroe).");
